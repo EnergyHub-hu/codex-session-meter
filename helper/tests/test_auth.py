@@ -19,11 +19,13 @@ def test_codex_auth_summary_reports_cli_auth_file(tmp_path, monkeypatch) -> None
         "ok": True,
         "auth_provider": "codex_cli",
         "codex_cli_available": True,
-        "auth_file": str(auth_file),
+        "auth_file": "custom_codex_home/auth.json",
+        "auth_file_location": "custom_codex_home",
         "auth_file_exists": True,
         "has_access_token": True,
         "login_url": auth.ANALYTICS_URL,
     }
+    assert str(tmp_path) not in summary["auth_file"]
     assert "access_token" not in summary
     assert "token" not in summary
 
