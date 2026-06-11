@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 from datetime import datetime
+
+import pytest
 
 from codex_session_widget import codex_api
 
@@ -97,3 +101,124 @@ def test_read_rate_limits_sends_initialize_then_rate_limit_request(monkeypatch) 
         {"id": 1, "method": "initialize", "params": {"clientName": "codex-session-widget"}},
         {"id": 2, "method": "account/rateLimits/read"},
     ]
+
+
+def test_read_rate_limits_times_out_when_app_server_hangs(monkeypatch) -> None:
+    read_fd, write_fd = os.pipe()
+    stdout = os.fdopen(read_fd, "r", encoding="utf-8")
+
+    class FakeStdin:
+        def write(self, value: str) -> None:
+            pass
+
+        def flush(self) -> None:
+            pass
+
+        def close(self) -> None:
+            os.close(write_fd)
+
+    class FakeProcess:
+        def __init__(self) -> None:
+            self.stdin = FakeStdin()
+            self.stdout = stdout
+
+        def terminate(self) -> None:
+            pass
+
+        def wait(self, timeout: float | None = None) -> int:
+            return 0
+
+        def kill(self) -> None:
+            pass
+
+    monkeypatch.setattr(codex_api.subprocess, "Popen", lambda *args, **kwargs: FakeProcess())
+
+    with pytest.raises(codex_api.CodexApiUnavailable, match="timed out"):
+        codex_api.read_rate_limits(timeout_seconds=0.01)
+
+    stdout.close()
+
+
+def test_read_rate_limits_kills_process_when_terminate_times_out(monkeypatch) -> None:
+    responses = iter(
+        [
+            json.dumps({"id": 1, "result": {}}) + "\n",
+            json.dumps({"id": 2, "result": {"rateLimits": {"primary": {"usedPercent": 25, "resetsAt": 1780754400}}}}) + "\n",
+        ]
+    )
+    calls: list[str] = []
+
+    class FakeStdin:
+        def write(self, value: str) -> None:
+            pass
+
+        def flush(self) -> None:
+            pass
+
+        def close(self) -> None:
+            calls.append("close")
+
+    class FakeStdout:
+        def readline(self) -> str:
+            return next(responses)
+
+    class FakeProcess:
+        stdin = FakeStdin()
+        stdout = FakeStdout()
+
+        def terminate(self) -> None:
+            calls.append("terminate")
+
+        def wait(self, timeout: float | None = None) -> int:
+            calls.append("wait")
+            if "kill" not in calls:
+                raise subprocess.TimeoutExpired("codex", timeout)
+            return 0
+
+        def kill(self) -> None:
+            calls.append("kill")
+
+    monkeypatch.setattr(codex_api.subprocess, "Popen", lambda *args, **kwargs: FakeProcess())
+
+    codex_api.read_rate_limits()
+
+    assert calls == ["close", "terminate", "wait", "kill", "wait"]
+
+
+def test_read_rate_limits_rejects_invalid_json_without_leaking_payload(monkeypatch) -> None:
+    payload = "partial-secret-access_token-payload"
+
+    class FakeStdin:
+        def write(self, value: str) -> None:
+            pass
+
+        def flush(self) -> None:
+            pass
+
+        def close(self) -> None:
+            pass
+
+    class FakeStdout:
+        def readline(self) -> str:
+            return payload + "\n"
+
+    class FakeProcess:
+        stdin = FakeStdin()
+        stdout = FakeStdout()
+
+        def terminate(self) -> None:
+            pass
+
+        def wait(self, timeout: float | None = None) -> int:
+            return 0
+
+        def kill(self) -> None:
+            pass
+
+    monkeypatch.setattr(codex_api.subprocess, "Popen", lambda *args, **kwargs: FakeProcess())
+
+    with pytest.raises(codex_api.CodexApiUnavailable) as exc_info:
+        codex_api.read_rate_limits()
+
+    assert "invalid JSON" in str(exc_info.value)
+    assert payload not in str(exc_info.value)
