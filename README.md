@@ -18,8 +18,8 @@ The repository contains two parts:
 The helper uses the Codex CLI app-server API as its primary data source. It starts `codex app-server --stdio` and calls the JSON-RPC method `account/rateLimits/read`, which returns the current primary and secondary rate-limit windows.
 
 - Auth comes from the normal Codex CLI login at `~/.codex/auth.json` or `$CODEX_HOME/auth.json`.
-- Optional development fallbacks still exist: a configured JSON endpoint or a captured sample file.
-- No webcrawler, browser profile, or DevTools-discovered endpoint is required for normal operation.
+- Optional development fallbacks still exist: a configured JSON endpoint or a sample file under `~/.config/codex-session-widget/samples/`.
+- No scraping, browser profile access, cookie reading, HAR processing, Playwright, or Chromium dependency is used for normal operation.
 
 If Codex CLI auth is missing, the widget shows `Codex: bejelentkezés kell`.
 
@@ -64,6 +64,8 @@ codex-session-widget open-logs
 
 `login` delegates to `codex login`. The widget reads the Codex CLI auth status and calls the Codex CLI app-server API; it does not use browser scraping.
 
+The Python helper uses semantic versioning, currently `0.2.1`. The GNOME Shell `metadata.json` `version` field is a separate integer extension package version.
+
 ## Configuration
 
 The default Codex CLI API source does not require `config.toml`. Create `~/.config/codex-session-widget/config.toml` only for development fallbacks:
@@ -91,7 +93,7 @@ For parser testing with a captured file, keep it inside `~/.config/codex-session
 sample_file = "~/.config/codex-session-widget/samples/analytics_sample.html"
 ```
 
-Never commit captured HAR files, cookies, Codex auth files, or full HTTP responses.
+Never commit captured HAR files, cookies, Codex auth files, tokens, auth headers, or full HTTP responses.
 
 ## Cache And Logs
 
@@ -100,6 +102,15 @@ Never commit captured HAR files, cookies, Codex auth files, or full HTTP respons
 - Config: `~/.config/codex-session-widget/config.toml`
 
 Logs avoid raw payloads, cookies, authorization headers, and other secrets.
+
+## Before Publishing
+
+1. Run `python -m pytest` from `helper/`, or the project virtualenv equivalent.
+2. Run `TZ=UTC python -m pytest` and `TZ=Europe/Budapest python -m pytest` from `helper/`.
+3. Run a secret scan for `access_token`, `refresh_token`, `Authorization`, `Bearer`, `cookie`, `session`, `api_key`, `secret`, and `password`.
+4. Review `git status --short` and `git diff` before publishing.
+5. Check that no `auth.json`, HAR, cookie dump, sqlite DB, `state.json`, `widget.log`, `config.toml`, `.env`, `.pem`, or `.key` file is tracked.
+6. Verify local config/cache directories are not committed: `~/.config/codex-session-widget/` and `~/.cache/codex-session-widget/`.
 
 ## Manual Verification Checklist
 

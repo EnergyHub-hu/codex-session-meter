@@ -6,7 +6,7 @@
 - Codex cloud requires ChatGPT sign-in.
 - Existing Codex tools own their own credential caches.
 - Reusing another application's credential cache would couple this widget to private implementation details.
-- Any browser profile, cookie store, session state, token cache, or HAR file is sensitive and must be treated like a password.
+- Browser profiles, cookie stores, session state files, token caches, and HAR files are sensitive and must not be used as widget data sources.
 
 ## Implementation Decision
 
@@ -24,9 +24,9 @@ Logout flow:
 codex-session-widget logout
 ```
 
-`login` delegates to `codex login`. Codex CLI stores auth in `$CODEX_HOME/auth.json`, defaulting to `~/.codex/auth.json`.
+`login` delegates to `codex login`. Codex CLI stores auth in `$CODEX_HOME/auth.json`, defaulting to `~/.codex/auth.json`. The helper checks only file presence and whether an access token field exists; it does not print token values.
 
-Treat the browser profile and session state as secrets and do not log them.
+Do not add browser profile scraping, cookie reading, HAR processing, Playwright, Chromium, or API-key support.
 
 ## Security Notes
 

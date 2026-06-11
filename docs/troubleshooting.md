@@ -20,24 +20,33 @@ Run:
 codex-session-widget login
 ```
 
-A dedicated browser window opens. Sign in to ChatGPT/Codex there, then close the browser window so the helper can save its standalone session state.
-
-If Chromium is missing, reinstall with `./install.sh` or run:
+This delegates to `codex login`. Complete the normal Codex CLI sign-in flow, then run:
 
 ```bash
-~/.local/share/codex-session-widget/venv/bin/python -m playwright install chromium
+codex-session-widget auth-status
 ```
 
-To reset the widget-owned session:
+The helper only checks whether the Codex CLI auth file exists and contains an access token. It does not print the token and does not read browser profiles, cookies, HAR files, Playwright state, or Chromium data.
+
+To reset Codex CLI auth, use:
 
 ```bash
 codex-session-widget logout
 codex-session-widget login
 ```
 
+or run the Codex CLI commands directly:
+
+```bash
+codex logout
+codex login
+```
+
 ## Panel Shows `Codex: adatforrás kell`
 
 Auth appears present, but the Codex CLI API did not return rate-limit data. Run `codex doctor` and `codex app-server --help` to verify the installed CLI supports the app-server API. Optional fallback sources can still be configured with `json_endpoint` or `sample_file` in `~/.config/codex-session-widget/config.toml`.
+
+The primary data source is `codex app-server --stdio` with JSON-RPC method `account/rateLimits/read`. The `json_endpoint` and `sample_file` paths are development fallbacks only.
 
 ## GNOME Extension Does Not Appear
 

@@ -23,11 +23,11 @@ The helper uses the Codex CLI API first:
 - Preferred: start `codex app-server --stdio` and call JSON-RPC method `account/rateLimits/read`.
 - The primary window drives the session percentage and reset time.
 - The secondary window is displayed as the weekly/secondary limit when present.
-- Legacy fallback: authenticated JSON endpoint configured as `json_endpoint` in `~/.config/codex-session-widget/config.toml`.
+- Development fallback: authenticated JSON endpoint configured as `json_endpoint` in `~/.config/codex-session-widget/config.toml`.
 - Development fallback: captured `sample_file` containing JSON or HTML from the analytics page, stored under `~/.config/codex-session-widget/samples/`.
 - Current no-source behavior: return an auth/data-source error while keeping any last successful cached value.
 
-This avoids visual scraping and web crawling. The parser fallback still handles likely JSON reset fields such as `reset_at`, `resetAt`, `resetsAt`, `resetTime`, `nextReset`, and timestamp variants.
+This avoids scraping, browser profile access, cookie reading, HAR processing, Playwright, Chromium, and web crawling. The parser fallback still handles likely JSON reset fields such as `reset_at`, `resetAt`, `resetsAt`, `resetTime`, `nextReset`, and timestamp variants.
 
 ## Codex CLI API Flow
 
