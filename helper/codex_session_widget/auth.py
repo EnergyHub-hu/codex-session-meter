@@ -9,8 +9,17 @@ import subprocess
 from .config import CODEX_AUTH_FILE
 
 
+def _codex_command() -> str | None:
+    command = shutil.which("codex")
+    if command is not None:
+        return command
+
+    local_command = Path.home() / ".local" / "bin" / "codex"
+    return str(local_command) if local_command.exists() else None
+
+
 def codex_cli_available() -> bool:
-    return shutil.which("codex") is not None
+    return _codex_command() is not None
 
 
 def codex_auth_file_exists() -> bool:
@@ -71,11 +80,13 @@ def codex_auth_summary() -> dict:
 
 
 def open_login() -> None:
-    if not codex_cli_available():
+    command = _codex_command()
+    if command is None:
         raise RuntimeError("Codex CLI is not installed or not on PATH.")
-    subprocess.run(["codex", "login"], check=True)
+    subprocess.run([command, "login"], check=True)
 
 
 def logout() -> None:
-    if codex_cli_available():
-        subprocess.run(["codex", "logout"], check=False)
+    command = _codex_command()
+    if command is not None:
+        subprocess.run([command, "logout"], check=False)

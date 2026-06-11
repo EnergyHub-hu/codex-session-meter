@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 import os
 import select
+import shutil
 import subprocess
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from .formatters import ok_payload
@@ -22,6 +24,25 @@ class CodexApiUnavailable(CodexApiError):
 
 APP_SERVER_TIMEOUT_SECONDS = 15.0
 APP_SERVER_SHUTDOWN_SECONDS = 2.0
+CLIENT_VERSION = "0.2.1"
+
+
+def _codex_command() -> str:
+    return shutil.which("codex") or str(Path.home() / ".local" / "bin" / "codex")
+
+
+def _initialize_message() -> dict[str, Any]:
+    return {
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "clientInfo": {
+                "name": "codex-session-widget",
+                "title": "Codex Session Widget",
+                "version": CLIENT_VERSION,
+            }
+        },
+    }
 
 
 def _send_message(process: subprocess.Popen[str], message: dict[str, Any], deadline: float) -> None:
@@ -125,7 +146,7 @@ def _cleanup_process(process: subprocess.Popen[str]) -> None:
 def read_rate_limits(*, timeout_seconds: float = APP_SERVER_TIMEOUT_SECONDS) -> dict[str, Any]:
     try:
         process = subprocess.Popen(
-            ["codex", "app-server", "--stdio"],
+            [_codex_command(), "app-server", "--stdio"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -136,7 +157,7 @@ def read_rate_limits(*, timeout_seconds: float = APP_SERVER_TIMEOUT_SECONDS) -> 
 
     deadline = time.monotonic() + timeout_seconds
     try:
-        _send_message(process, {"id": 1, "method": "initialize", "params": {"clientName": "codex-session-widget"}}, deadline)
+        _send_message(process, _initialize_message(), deadline)
         _read_response(process, 1, deadline)
         _send_message(process, {"id": 2, "method": "account/rateLimits/read"}, deadline)
         return _read_response(process, 2, deadline)

@@ -98,9 +98,65 @@ def test_read_rate_limits_sends_initialize_then_rate_limit_request(monkeypatch) 
     assert result["rateLimits"]["primary"]["usedPercent"] == 25
     messages = [json.loads(value) for value in writes]
     assert messages == [
-        {"id": 1, "method": "initialize", "params": {"clientName": "codex-session-widget"}},
+        {
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "clientInfo": {
+                    "name": "codex-session-widget",
+                    "title": "Codex Session Widget",
+                    "version": "0.2.1",
+                }
+            },
+        },
         {"id": 2, "method": "account/rateLimits/read"},
     ]
+
+
+def test_read_rate_limits_uses_local_bin_codex_when_path_lookup_fails(monkeypatch) -> None:
+    popen_args: list[list[str]] = []
+    responses = iter(
+        [
+            json.dumps({"id": 1, "result": {}}) + "\n",
+            json.dumps({"id": 2, "result": {"rateLimits": {"primary": {"usedPercent": 25, "resetsAt": 1780754400}}}}) + "\n",
+        ]
+    )
+
+    class FakeStdin:
+        def write(self, value: str) -> None:
+            pass
+
+        def flush(self) -> None:
+            pass
+
+        def close(self) -> None:
+            pass
+
+    class FakeStdout:
+        def readline(self) -> str:
+            return next(responses)
+
+    class FakeProcess:
+        stdin = FakeStdin()
+        stdout = FakeStdout()
+
+        def terminate(self) -> None:
+            pass
+
+        def wait(self, timeout: float | None = None) -> int:
+            return 0
+
+    def fake_popen(args: list[str], *args_: object, **kwargs: object) -> FakeProcess:
+        popen_args.append(args)
+        return FakeProcess()
+
+    monkeypatch.setenv("HOME", "/home/tester")
+    monkeypatch.setenv("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+    monkeypatch.setattr(codex_api.subprocess, "Popen", fake_popen)
+
+    codex_api.read_rate_limits()
+
+    assert popen_args == [["/home/tester/.local/bin/codex", "app-server", "--stdio"]]
 
 
 def test_read_rate_limits_times_out_when_app_server_hangs(monkeypatch) -> None:
