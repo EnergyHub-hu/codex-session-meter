@@ -5,7 +5,7 @@ import json
 import sys
 
 from . import auth
-from .config import ANALYTICS_URL, LOG_FILE, ALLOWED_POLL_INTERVALS, ALLOWED_DISPLAY_FORMATS, ALLOWED_PANEL_ICONS, ConfigError, read_settings, write_settings
+from .config import LOG_FILE, ALLOWED_POLL_INTERVALS, ALLOWED_DISPLAY_FORMATS, ALLOWED_PANEL_ICONS, ConfigError, read_settings, write_settings
 from .fetcher import cached_status, refresh_status
 
 
@@ -43,7 +43,6 @@ def main(argv: list[str] | None = None) -> int:
 
     subparsers.add_parser("login")
     subparsers.add_parser("logout")
-    subparsers.add_parser("open-analytics")
     subparsers.add_parser("auth-status")
     subparsers.add_parser("open-logs")
 
@@ -77,14 +76,11 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "login":
         auth.open_login()
-        print(f"Started Codex CLI login. If needed, sign in at {ANALYTICS_URL}")
+        print("Started Codex CLI login.")
         return 0
     if args.command == "logout":
         auth.logout()
         print("Codex CLI logout requested")
-        return 0
-    if args.command == "open-analytics":
-        auth.open_analytics()
         return 0
     if args.command == "auth-status":
         print_json(auth.codex_auth_summary())

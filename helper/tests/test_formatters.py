@@ -78,7 +78,7 @@ def test_error_payload_auth_required_shape() -> None:
     assert payload["ok"] is False
     assert payload["status"] == "auth_required"
     assert payload["display"] == "Codex: bejelentkezés kell"
-    assert "login_url" in payload
+    assert "login_url" not in payload
     assert payload["settings"]["display_format"] == "verbose"
     assert payload["source_label"] == "Codex CLI auth"
 

@@ -5,9 +5,8 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
-import webbrowser
 
-from .config import ANALYTICS_URL, CODEX_AUTH_FILE
+from .config import CODEX_AUTH_FILE
 
 
 def codex_cli_available() -> bool:
@@ -68,20 +67,13 @@ def codex_auth_summary() -> dict:
         "auth_file_location": auth_file_location,
         "auth_file_exists": codex_auth_file_exists(),
         "has_access_token": codex_access_token() is not None,
-        "login_url": ANALYTICS_URL,
     }
 
 
 def open_login() -> None:
-    if codex_cli_available():
-        subprocess.run(["codex", "login"], check=True)
-        return
-
-    webbrowser.open(ANALYTICS_URL)
-
-
-def open_analytics() -> None:
-    webbrowser.open(ANALYTICS_URL)
+    if not codex_cli_available():
+        raise RuntimeError("Codex CLI is not installed or not on PATH.")
+    subprocess.run(["codex", "login"], check=True)
 
 
 def logout() -> None:

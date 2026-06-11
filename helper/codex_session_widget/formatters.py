@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from .config import ANALYTICS_URL, DEFAULT_DISPLAY_FORMAT, DEFAULT_SHOW_WEEKLY_LIMITS, SESSION_SECONDS
+from .config import DEFAULT_DISPLAY_FORMAT, DEFAULT_SHOW_WEEKLY_LIMITS, SESSION_SECONDS
 
 
 def clamp_percent(value: float) -> int:
@@ -118,7 +118,6 @@ def error_payload(
         "status": status,
         "display": display,
         "message": message,
-        "login_url": ANALYTICS_URL,
         "settings": {
             **({"poll_interval_minutes": poll_interval_minutes} if poll_interval_minutes is not None else {}),
             "display_format": display_format,

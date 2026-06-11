@@ -10,8 +10,6 @@ except ModuleNotFoundError:  # pragma: no cover - Python < 3.11
     import tomli as tomllib
 
 APP_NAME = "codex-session-widget"
-ANALYTICS_URL = "https://chatgpt.com/codex/cloud/settings/analytics"
-ALT_ANALYTICS_URL = "https://chatgpt.com/codex/settings/usage"
 SESSION_SECONDS = 5 * 60 * 60
 DEFAULT_POLL_INTERVAL_MINUTES = 1
 DEFAULT_DISPLAY_FORMAT = "verbose"

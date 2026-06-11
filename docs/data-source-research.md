@@ -17,17 +17,15 @@
 
 ## Chosen Method
 
-The helper uses the Codex CLI API first:
+The helper uses the Codex CLI API only:
 
 - Auth: `codex-session-widget login` delegates to `codex login`.
-- Preferred: start `codex app-server --stdio` and call JSON-RPC method `account/rateLimits/read`.
+- Start `codex app-server --stdio` and call JSON-RPC method `account/rateLimits/read`.
 - The primary window drives the session percentage and reset time.
 - The secondary window is displayed as the weekly/secondary limit when present.
-- Development fallback: authenticated JSON endpoint configured as `json_endpoint` in `~/.config/codex-session-widget/config.toml`.
-- Development fallback: captured `sample_file` containing JSON or HTML from the analytics page, stored under `~/.config/codex-session-widget/samples/`.
 - Current no-source behavior: return an auth/data-source error while keeping any last successful cached value.
 
-This avoids scraping, browser profile access, cookie reading, HAR processing, Playwright, Chromium, and web crawling. The parser fallback still handles likely JSON reset fields such as `reset_at`, `resetAt`, `resetsAt`, `resetTime`, `nextReset`, and timestamp variants.
+This avoids alternate data-source discovery, scraping, browser profile access, cookie reading, HAR processing, Playwright, Chromium, and web crawling.
 
 ## Codex CLI API Flow
 
@@ -41,4 +39,4 @@ Do not save or share HAR files unless they are fully redacted. HAR files commonl
 
 ## Current Limitation
 
-`codex app-server` is marked experimental upstream, so the helper keeps the older `json_endpoint` and `sample_file` paths as development fallbacks.
+`codex app-server` is marked experimental upstream. If it is unavailable or does not return rate-limit data, the widget reports a Codex CLI data-source error instead of trying another source.

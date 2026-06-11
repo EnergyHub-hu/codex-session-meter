@@ -18,7 +18,7 @@ The repository contains two parts:
 The helper uses the Codex CLI app-server API as its primary data source. It starts `codex app-server --stdio` and calls the JSON-RPC method `account/rateLimits/read`, which returns the current primary and secondary rate-limit windows.
 
 - Auth comes from the normal Codex CLI login at `~/.codex/auth.json` or `$CODEX_HOME/auth.json`.
-- Optional development fallbacks still exist: a configured JSON endpoint or a sample file under `~/.config/codex-session-widget/samples/`.
+- Codex usage data comes only from `codex app-server --stdio` and `account/rateLimits/read`.
 - No scraping, browser profile access, cookie reading, HAR processing, Playwright, or Chromium dependency is used for normal operation.
 
 If Codex CLI auth is missing, the widget shows `Codex: bejelentkezés kell`.
@@ -57,7 +57,6 @@ codex-session-widget settings --json
 codex-session-widget configure --poll-interval 5 --display-format compact --hide-weekly-limits --json
 codex-session-widget login
 codex-session-widget logout
-codex-session-widget open-analytics
 codex-session-widget auth-status
 codex-session-widget open-logs
 ```
@@ -68,13 +67,7 @@ The Python helper uses semantic versioning, currently `0.2.1`. The GNOME Shell `
 
 ## Configuration
 
-The default Codex CLI API source does not require `config.toml`. Create `~/.config/codex-session-widget/config.toml` only for development fallbacks:
-
-```toml
-json_endpoint = "https://chatgpt.com/..."
-```
-
-Only `json_endpoint` and `sample_file` are read from this file. The Codex CLI API is tried before these fallback sources.
+The data source is not configurable. The helper relies only on the Codex CLI app-server API.
 
 Menu-controlled preferences are stored in `~/.config/codex-session-widget/settings.toml`.
 
@@ -87,19 +80,13 @@ panel_icon = "brain"
 # panel_icon values: brain, robot, chip, circuit, atom, terminal, fire, boom, star, sparkle
 ```
 
-For parser testing with a captured file, keep it inside `~/.config/codex-session-widget/samples/`:
-
-```toml
-sample_file = "~/.config/codex-session-widget/samples/analytics_sample.html"
-```
-
-Never commit captured HAR files, cookies, Codex auth files, tokens, auth headers, or full HTTP responses.
+Never commit captured HAR files, cookies, Codex auth files, tokens, auth headers, or full raw responses.
 
 ## Cache And Logs
 
 - Last successful state: `~/.cache/codex-session-widget/state.json`
 - Logs: `~/.cache/codex-session-widget/widget.log`
-- Config: `~/.config/codex-session-widget/config.toml`
+- Settings: `~/.config/codex-session-widget/settings.toml`
 
 Logs avoid raw payloads, cookies, authorization headers, and other secrets.
 
@@ -109,7 +96,7 @@ Logs avoid raw payloads, cookies, authorization headers, and other secrets.
 2. Run `TZ=UTC python -m pytest` and `TZ=Europe/Budapest python -m pytest` from `helper/`.
 3. Run a secret scan for `access_token`, `refresh_token`, `Authorization`, `Bearer`, `cookie`, `session`, `api_key`, `secret`, and `password`.
 4. Review `git status --short` and `git diff` before publishing.
-5. Check that no `auth.json`, HAR, cookie dump, sqlite DB, `state.json`, `widget.log`, `config.toml`, `.env`, `.pem`, or `.key` file is tracked.
+5. Check that no `auth.json`, HAR, cookie dump, sqlite DB, `state.json`, `widget.log`, `.env`, `.pem`, or `.key` file is tracked.
 6. Verify local config/cache directories are not committed: `~/.config/codex-session-widget/` and `~/.cache/codex-session-widget/`.
 
 ## Manual Verification Checklist

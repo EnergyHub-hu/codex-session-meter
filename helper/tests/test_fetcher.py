@@ -49,7 +49,7 @@ def test_refresh_status_requires_auth_when_codex_cli_api_fails_without_token(mon
     assert payload["status"] == "auth_required"
 
 
-def test_refresh_status_has_no_configured_source_fallback_after_codex_cli_failure(monkeypatch) -> None:
+def test_refresh_status_has_no_configured_source_after_codex_cli_failure(monkeypatch) -> None:
     now = datetime(2026, 6, 6, 12, 0, tzinfo=timezone.utc)
 
     monkeypatch.setattr(fetcher, "load_last_success", lambda: None)
