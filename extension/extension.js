@@ -60,6 +60,7 @@ const ICON_OPTIONS = {
     },
 };
 const HELPER = GLib.build_filenamev([GLib.get_home_dir(), '.local', 'bin', 'codex-session-widget']);
+const HELPER_TIMEOUT_SECONDS = 20;
 
 const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator extends PanelMenu.Button {
 
@@ -67,6 +68,8 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
         super(0.0, 'Codex Session Widget');
 
         this._timerId = 0;
+        this._helperTimeoutIds = new Set();
+        this._helperProcesses = new Set();
         this._running = false;
         this._lastSuccess = null;
         this._settings = {...DEFAULT_SETTINGS};
@@ -144,6 +147,20 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
             GLib.Source.remove(this._timerId);
             this._timerId = 0;
         }
+        for (const timeoutId of this._helperTimeoutIds)
+            GLib.Source.remove(timeoutId);
+        this._helperTimeoutIds.clear();
+
+        for (const proc of this._helperProcesses) {
+            try {
+                if (!proc.get_if_exited())
+                    proc.force_exit();
+            } catch (error) {
+                // Ignore shutdown races while GNOME Shell disables the extension.
+            }
+        }
+        this._helperProcesses.clear();
+        this._running = false;
     }
 
     refresh() {
@@ -315,25 +332,61 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
             return;
         }
 
+        this._helperProcesses.add(proc);
+        let completed = false;
+        let timeoutId = 0;
+        const finish = payload => {
+            if (completed)
+                return;
+            completed = true;
+            if (timeoutId) {
+                GLib.Source.remove(timeoutId);
+                this._helperTimeoutIds.delete(timeoutId);
+                timeoutId = 0;
+            }
+            this._helperProcesses.delete(proc);
+            callback(payload);
+        };
+
+        timeoutId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, HELPER_TIMEOUT_SECONDS, () => {
+            const firedTimeoutId = timeoutId;
+            timeoutId = 0;
+            this._helperTimeoutIds.delete(firedTimeoutId);
+            try {
+                if (!proc.get_if_exited())
+                    proc.force_exit();
+            } catch (error) {
+                // The communicate callback may be racing this watchdog.
+            }
+            finish({
+                ok: false,
+                status: 'timeout',
+                display: 'Codex: időtúllépés',
+                message: 'Helper timed out while refreshing Codex usage.',
+            });
+            return GLib.SOURCE_REMOVE;
+        });
+        this._helperTimeoutIds.add(timeoutId);
+
         proc.communicate_utf8_async(null, null, (source, result) => {
             try {
-                const [, stdout, stderr] = source.communicate_utf8_finish(result);
+                const [, stdout] = source.communicate_utf8_finish(result);
                 if (stdout && stdout.trim()) {
-                    callback(JSON.parse(stdout.trim()));
+                    finish(JSON.parse(stdout.trim()));
                     return;
                 }
-                callback({
+                finish({
                     ok: false,
                     status: 'unknown',
                     display: 'Codex: nincs válasz',
-                    message: stderr || 'Helper returned no JSON.',
+                    message: 'Helper returned no JSON.',
                 });
             } catch (error) {
-                callback({
+                finish({
                     ok: false,
                     status: 'unknown',
                     display: 'Codex: hibás válasz',
-                    message: String(error),
+                    message: 'Helper returned invalid JSON.',
                 });
             }
         });
