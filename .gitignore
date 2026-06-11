@@ -1,0 +1,25 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+
+# Local credential/config/cache material
+.codex/
+auth.json
+cookies*.txt
+*.har
+*.sqlite
+*.sqlite3
+state.json
+widget.log
+config.toml
+browser-profile/
+
+# Editor/OS noise
+.DS_Store
+.idea/
+.vscode/
