@@ -10,6 +10,12 @@ build/
 # Local credential/config/cache material
 .codex/
 auth.json
+.env
+.env.*
+*.pem
+*.key
+id_rsa*
+id_ed25519*
 cookies*.txt
 *.har
 *.sqlite
@@ -18,6 +24,7 @@ state.json
 widget.log
 config.toml
 browser-profile/
+playwright/.auth/
 
 # Editor/OS noise
 .DS_Store
