@@ -4,9 +4,12 @@ from dataclasses import dataclass
 import json
 import shutil
 import subprocess
+import urllib.error
+import urllib.request
 import webbrowser
 
 from .config import ANALYTICS_URL, CODEX_AUTH_FILE
+from .parser import MAX_ANALYTICS_PAYLOAD_CHARS
 
 
 @dataclass(frozen=True)
@@ -70,23 +73,33 @@ def open_login() -> None:
     webbrowser.open(ANALYTICS_URL)
 
 
-def fetch_json_with_token(endpoint: str, headers: dict[str, str]) -> AuthenticatedResponse:
-    import urllib.error
-    import urllib.request
+def _read_bounded_text(response) -> str:
+    body = response.read(MAX_ANALYTICS_PAYLOAD_CHARS + 1)
+    if len(body) > MAX_ANALYTICS_PAYLOAD_CHARS:
+        raise RuntimeError("payload_too_large")
+    return body.decode("utf-8", errors="replace")
 
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def fetch_json_with_token(endpoint: str, headers: dict[str, str]) -> AuthenticatedResponse:
     request = urllib.request.Request(endpoint, headers=headers, method="GET")
+    opener = urllib.request.build_opener(_NoRedirectHandler)
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with opener.open(request, timeout=30) as response:
             return AuthenticatedResponse(
                 status_code=response.status,
                 headers=dict(response.headers.items()),
-                text=response.read().decode("utf-8", errors="replace"),
+                text=_read_bounded_text(response),
             )
     except urllib.error.HTTPError as exc:
         return AuthenticatedResponse(
             status_code=exc.code,
             headers=dict(exc.headers.items()),
-            text=exc.read().decode("utf-8", errors="replace"),
+            text=_read_bounded_text(exc),
         )
 
 

@@ -292,6 +292,17 @@ def refresh_status() -> dict[str, Any]:
                 show_weekly_limits=settings["show_weekly_limits"],
                 panel_icon=settings["panel_icon"],
             )
+        if str(exc) == "payload_too_large":
+            return error_payload(
+                "parse_error",
+                "Codex: nem olvasható",
+                "Could not parse the analytics response.",
+                last_success=last_success,
+                poll_interval_minutes=settings["poll_interval_minutes"],
+                display_format=settings["display_format"],
+                show_weekly_limits=settings["show_weekly_limits"],
+                panel_icon=settings["panel_icon"],
+            )
         logging.info("auth runtime error: %s", exc)
         return error_payload(
             "auth_required",
