@@ -24,6 +24,7 @@ The helper uses the Codex CLI API only:
 - The primary window drives the session percentage and reset time.
 - The secondary window is displayed as the weekly/secondary limit when present.
 - Current no-source behavior: return an auth/data-source error while keeping any last successful cached value.
+- No direct HTTP client is used in the helper; any network access would be internal to the Codex CLI process.
 
 This avoids alternate data-source discovery, scraping, browser profile access, cookie reading, HAR processing, Playwright, Chromium, and web crawling.
 
@@ -34,6 +35,8 @@ This avoids alternate data-source discovery, scraping, browser profile access, c
 3. It sends `initialize` with client name `codex-session-widget`.
 4. It sends `account/rateLimits/read`.
 5. It converts `rateLimits.primary` and `rateLimits.secondary` into the widget payload.
+
+The helper never calls a public HTTP endpoint directly.
 
 Do not save or share HAR files unless they are fully redacted. HAR files commonly contain cookies and authorization headers. Do not commit `~/.codex/auth.json`.
 

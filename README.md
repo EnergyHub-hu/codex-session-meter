@@ -15,7 +15,7 @@ The repository contains two parts:
 
 ## Current Data-Source Status
 
-The helper uses the Codex CLI app-server API as its primary data source. It starts `codex app-server --stdio` and calls the JSON-RPC method `account/rateLimits/read`, which returns the current primary and secondary rate-limit windows.
+The helper uses the Codex CLI app-server API only. It starts `codex app-server --stdio` and calls the JSON-RPC method `account/rateLimits/read`, which returns the current primary and secondary rate-limit windows.
 
 - Auth comes from the normal Codex CLI login at `~/.codex/auth.json` or `$CODEX_HOME/auth.json`.
 - Codex usage data comes only from `codex app-server --stdio` and `account/rateLimits/read`.
@@ -67,7 +67,7 @@ The Python helper uses semantic versioning, currently `0.2.1`. The GNOME Shell `
 
 ## Configuration
 
-The data source is not configurable. The helper relies only on the Codex CLI app-server API.
+The data source is not configurable. The helper relies only on the Codex CLI app-server API over stdio.
 
 Menu-controlled preferences are stored in `~/.config/codex-session-widget/settings.toml`.
 

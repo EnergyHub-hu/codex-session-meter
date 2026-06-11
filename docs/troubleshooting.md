@@ -46,7 +46,7 @@ codex login
 
 Auth appears present, but the Codex CLI API did not return rate-limit data. Run `codex doctor` and `codex app-server --help` to verify the installed CLI supports the app-server API.
 
-The only data source is `codex app-server --stdio` with JSON-RPC method `account/rateLimits/read`. There is no sample file, browser profile, cookie, or alternate data-source path.
+The only data source is `codex app-server --stdio` with JSON-RPC method `account/rateLimits/read`. There is no sample file, browser profile, cookie, direct HTTP client, or alternate data-source path.
 
 ## GNOME Extension Does Not Appear
 

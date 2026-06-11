@@ -26,6 +26,8 @@ codex-session-widget logout
 
 `login` delegates to `codex login`. Codex CLI stores auth in `$CODEX_HOME/auth.json`, defaulting to `~/.codex/auth.json`. The helper checks only file presence and whether an access token field exists; it does not print token values.
 
+The helper does not use browser profiles, cookies, HAR files, Playwright state, or Chromium data as auth inputs.
+
 Do not add browser profile scraping, cookie reading, HAR processing, Playwright, Chromium, or API-key support.
 
 ## Security Notes
