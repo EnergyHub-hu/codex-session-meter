@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "codex-session-widget"
-version = "0.1.0"
+version = "0.2.1"
 description = "Local helper for an Ubuntu GNOME Codex session progress widget"
 requires-python = ">=3.10"
 dependencies = [
