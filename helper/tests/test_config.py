@@ -7,7 +7,7 @@ from codex_session_widget.config import ConfigError, read_settings, write_settin
 
 
 def test_read_settings_defaults_when_missing(tmp_path, monkeypatch) -> None:
-    config_dir = tmp_path / "codex-session-widget"
+    config_dir = tmp_path / "codex-session-meter"
     config_dir.mkdir()
     settings_file = config_dir / "settings.toml"
 
@@ -23,7 +23,7 @@ def test_read_settings_defaults_when_missing(tmp_path, monkeypatch) -> None:
 
 
 def test_write_settings_persists_menu_options(tmp_path, monkeypatch) -> None:
-    config_dir = tmp_path / "codex-session-widget"
+    config_dir = tmp_path / "codex-session-meter"
     config_dir.mkdir()
     settings_file = config_dir / "settings.toml"
 
@@ -52,7 +52,7 @@ def test_write_settings_persists_menu_options(tmp_path, monkeypatch) -> None:
 
 
 def test_read_settings_rejects_invalid_values(tmp_path, monkeypatch) -> None:
-    config_dir = tmp_path / "codex-session-widget"
+    config_dir = tmp_path / "codex-session-meter"
     config_dir.mkdir()
     settings_file = config_dir / "settings.toml"
     settings_file.write_text("poll_interval_minutes = 2\n", encoding="utf-8")
@@ -65,7 +65,7 @@ def test_read_settings_rejects_invalid_values(tmp_path, monkeypatch) -> None:
 
 
 def test_read_settings_rejects_invalid_icon_values(tmp_path, monkeypatch) -> None:
-    config_dir = tmp_path / "codex-session-widget"
+    config_dir = tmp_path / "codex-session-meter"
     config_dir.mkdir()
     settings_file = config_dir / "settings.toml"
     settings_file.write_text('panel_icon = "lamp"\n', encoding="utf-8")
@@ -78,7 +78,7 @@ def test_read_settings_rejects_invalid_icon_values(tmp_path, monkeypatch) -> Non
 
 
 def test_write_settings_accepts_tech_panel_icons(tmp_path, monkeypatch) -> None:
-    config_dir = tmp_path / "codex-session-widget"
+    config_dir = tmp_path / "codex-session-meter"
     config_dir.mkdir()
     settings_file = config_dir / "settings.toml"
 

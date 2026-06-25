@@ -103,8 +103,8 @@ def test_read_rate_limits_sends_initialize_then_rate_limit_request(monkeypatch) 
             "method": "initialize",
             "params": {
                 "clientInfo": {
-                    "name": "codex-session-widget",
-                    "title": "Codex Session Widget",
+                    "name": "codex-session-meter",
+                        "title": "Codex Session Meter",
                     "version": "0.2.1",
                 }
             },

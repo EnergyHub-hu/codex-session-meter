@@ -59,7 +59,7 @@ const ICON_OPTIONS = {
         glyph: '✨',
     },
 };
-const HELPER = GLib.build_filenamev([GLib.get_home_dir(), '.local', 'bin', 'codex-session-widget']);
+const HELPER = GLib.build_filenamev([GLib.get_home_dir(), '.local', 'bin', 'codex-session-meter']);
 const HELPER_TIMEOUT_SECONDS = 20;
 
 const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator extends PanelMenu.Button {

@@ -89,7 +89,7 @@ def refresh_status() -> dict[str, Any]:
             return error_payload(
                 "auth_required",
                 "Codex: bejelentkezés kell",
-                "Run `codex-session-widget login` or `codex login` so the Codex CLI API can read account rate limits.",
+                "Run `codex-session-meter login` or `codex login` so the Codex CLI API can read account rate limits.",
                 last_success=last_success,
                 poll_interval_minutes=settings["poll_interval_minutes"],
                 display_format=settings["display_format"],

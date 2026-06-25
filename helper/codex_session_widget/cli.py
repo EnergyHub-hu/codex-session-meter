@@ -21,7 +21,7 @@ def _settings_payload(settings: dict[str, object]) -> dict[str, object]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="codex-session-widget")
+    parser = argparse.ArgumentParser(prog="codex-session-meter")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     for name in ("status", "refresh"):

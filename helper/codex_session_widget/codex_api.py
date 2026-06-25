@@ -37,8 +37,8 @@ def _initialize_message() -> dict[str, Any]:
         "method": "initialize",
         "params": {
             "clientInfo": {
-                "name": "codex-session-widget",
-                "title": "Codex Session Widget",
+                "name": "codex-session-meter",
+                "title": "Codex Session Meter",
                 "version": CLIENT_VERSION,
             }
         },

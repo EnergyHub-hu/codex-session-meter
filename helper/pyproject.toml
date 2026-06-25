@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "codex-session-widget"
+name = "codex-session-meter"
 version = "0.2.1"
-description = "Local helper for an Ubuntu GNOME Codex session progress widget"
+description = "Local helper for an Ubuntu GNOME Codex session progress meter"
 requires-python = ">=3.10"
 dependencies = [
   "tomli>=2.0; python_version < '3.11'",
@@ -17,7 +17,7 @@ dev = [
 ]
 
 [project.scripts]
-codex-session-widget = "codex_session_widget.cli:main"
+codex-session-meter = "codex_session_widget.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

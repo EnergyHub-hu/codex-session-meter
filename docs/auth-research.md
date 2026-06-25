@@ -15,13 +15,13 @@ The helper does not ask for API keys. It uses Codex CLI authentication through `
 Primary local flow:
 
 ```bash
-codex-session-widget login
+codex-session-meter login
 ```
 
 Logout flow:
 
 ```bash
-codex-session-widget logout
+codex-session-meter logout
 ```
 
 `login` delegates to `codex login`. Codex CLI stores auth in `$CODEX_HOME/auth.json`, defaulting to `~/.codex/auth.json`. The helper checks only file presence and whether an access token field exists; it does not print token values.

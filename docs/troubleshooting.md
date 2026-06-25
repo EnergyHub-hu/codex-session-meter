@@ -2,12 +2,12 @@
 
 ## Panel Shows `Codex: helper hiányzik`
 
-GNOME Shell cannot find `codex-session-widget`.
+GNOME Shell cannot find `codex-session-meter`.
 
 Check:
 
 ```bash
-~/.local/bin/codex-session-widget status --json
+~/.local/bin/codex-session-meter status --json
 ```
 
 If that works, make sure `~/.local/bin` is in the PATH visible to GNOME Shell, then log out and back in.
@@ -17,13 +17,13 @@ If that works, make sure `~/.local/bin` is in the PATH visible to GNOME Shell, t
 Run:
 
 ```bash
-codex-session-widget login
+codex-session-meter login
 ```
 
 This delegates to `codex login`. Complete the normal Codex CLI sign-in flow, then run:
 
 ```bash
-codex-session-widget auth-status
+codex-session-meter auth-status
 ```
 
 The helper only checks whether the Codex CLI auth file exists and contains an access token. It does not print the token and does not read browser profiles, cookies, HAR files, Playwright state, or Chromium data.
@@ -31,8 +31,8 @@ The helper only checks whether the Codex CLI auth file exists and contains an ac
 To reset Codex CLI auth, use:
 
 ```bash
-codex-session-widget logout
-codex-session-widget login
+codex-session-meter logout
+codex-session-meter login
 ```
 
 or run the Codex CLI commands directly:
@@ -53,8 +53,8 @@ The only data source is `codex app-server --stdio` with JSON-RPC method `account
 Run:
 
 ```bash
-gnome-extensions list | grep codex-session-widget
-gnome-extensions enable codex-session-widget@local
+gnome-extensions list | grep codex-session-meter
+gnome-extensions enable codex-session-meter@local
 ```
 
 If it still does not appear, log out/in or use Extension Manager.
@@ -62,13 +62,13 @@ If it still does not appear, log out/in or use Extension Manager.
 ## Inspect Logs
 
 ```bash
-codex-session-widget open-logs
+codex-session-meter open-logs
 ```
 
 or:
 
 ```bash
-less ~/.cache/codex-session-widget/widget.log
+less ~/.cache/codex-session-meter/widget.log
 ```
 
 Logs should avoid raw payloads, cookies, authorization headers, and other secrets.

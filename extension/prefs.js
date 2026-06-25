@@ -6,7 +6,7 @@ import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/ex
 export default class CodexSessionPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
         const page = new Adw.PreferencesPage();
-        const group = new Adw.PreferencesGroup({title: 'Codex Session Widget'});
+        const group = new Adw.PreferencesGroup({title: 'Codex Session Meter'});
         const row = new Adw.ActionRow({
             title: 'Configuration',
             subtitle: 'The data source is Codex CLI only. Use the panel menu for poll interval, display format, icon, and weekly limit visibility.',

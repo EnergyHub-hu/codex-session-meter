@@ -19,7 +19,7 @@
 
 The helper uses the Codex CLI API only:
 
-- Auth: `codex-session-widget login` delegates to `codex login`.
+- Auth: `codex-session-meter login` delegates to `codex login`.
 - Start `codex app-server --stdio` and call JSON-RPC method `account/rateLimits/read`.
 - The primary window drives the session percentage and reset time.
 - The secondary window is displayed as the weekly/secondary limit when present.
@@ -30,9 +30,9 @@ This avoids alternate data-source discovery, scraping, browser profile access, c
 
 ## Codex CLI API Flow
 
-1. Run `codex-session-widget login` or `codex login`.
+1. Run `codex-session-meter login` or `codex login`.
 2. The helper starts `codex app-server --stdio`.
-3. It sends `initialize` with client name `codex-session-widget`.
+3. It sends `initialize` with client name `codex-session-meter`.
 4. It sends `account/rateLimits/read`.
 5. It converts `rateLimits.primary` and `rateLimits.secondary` into the widget payload.
 

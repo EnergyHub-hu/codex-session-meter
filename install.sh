@@ -3,13 +3,13 @@ set -euo pipefail
 umask 077
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-UUID="codex-session-widget@local"
+UUID="codex-session-meter@local"
 EXTENSION_TARGET="$HOME/.local/share/gnome-shell/extensions/$UUID"
 BIN_DIR="$HOME/.local/bin"
-CONFIG_DIR="$HOME/.config/codex-session-widget"
-CACHE_DIR="$HOME/.cache/codex-session-widget"
-DATA_DIR="$HOME/.local/share/codex-session-widget"
-VENV_DIR="$HOME/.local/share/codex-session-widget/venv"
+CONFIG_DIR="$HOME/.config/codex-session-meter"
+CACHE_DIR="$HOME/.cache/codex-session-meter"
+DATA_DIR="$HOME/.local/share/codex-session-meter"
+VENV_DIR="$HOME/.local/share/codex-session-meter/venv"
 
 command -v python3 >/dev/null || { echo "python3 is required" >&2; exit 1; }
 
@@ -20,7 +20,7 @@ python3 -m venv "$VENV_DIR"
 "$VENV_DIR/bin/python" -m pip install --upgrade pip
 "$VENV_DIR/bin/python" -m pip install "$ROOT_DIR/helper"
 
-ln -sf "$VENV_DIR/bin/codex-session-widget" "$BIN_DIR/codex-session-widget"
+ln -sf "$VENV_DIR/bin/codex-session-meter" "$BIN_DIR/codex-session-meter"
 
 rm -rf "$EXTENSION_TARGET"
 mkdir -p "$EXTENSION_TARGET"
