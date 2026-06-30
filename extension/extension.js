@@ -61,6 +61,7 @@ const ICON_OPTIONS = {
 };
 const HELPER = GLib.build_filenamev([GLib.get_home_dir(), '.local', 'bin', 'codex-session-meter']);
 const HELPER_TIMEOUT_SECONDS = 20;
+const SESSION_SECONDS = 5 * 60 * 60;
 
 const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator extends PanelMenu.Button {
 
@@ -90,6 +91,11 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
             y_align: Clutter.ActorAlign.CENTER,
         });
 
+        this._paceDot = new St.Widget({
+            style_class: 'codex-session-pace-dot codex-session-pace-unknown',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+
         this._label = new St.Label({
             text: 'Codex: töltés…',
             y_align: Clutter.ActorAlign.CENTER,
@@ -99,17 +105,20 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
         this._applyIconSettings();
 
         this._box.add_child(this._icon);
+        this._box.add_child(this._paceDot);
         this._box.add_child(this._label);
         this.add_child(this._box);
 
         this._statusItem = new PopupMenu.PopupMenuItem('Állapot: töltés…', {reactive: false});
         this._sessionItem = new PopupMenu.PopupMenuItem('Session: töltés…', {reactive: false});
+        this._paceItem = new PopupMenu.PopupMenuItem('Fogyási tempó: töltés…', {reactive: false});
         this._resetItem = new PopupMenu.PopupMenuItem('Reset: töltés…', {reactive: false});
         this._updatedItem = new PopupMenu.PopupMenuItem('Frissítve: nincs', {reactive: false});
         this._sourceItem = new PopupMenu.PopupMenuItem('Forrás: nincs', {reactive: false});
         this._messageItem = new PopupMenu.PopupMenuItem('Üzenet: nincs', {reactive: false});
         this.menu.addMenuItem(this._statusItem);
         this.menu.addMenuItem(this._sessionItem);
+        this.menu.addMenuItem(this._paceItem);
         this.menu.addMenuItem(this._resetItem);
         this.menu.addMenuItem(this._updatedItem);
         this.menu.addMenuItem(this._sourceItem);
@@ -179,14 +188,74 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
         const showWeeklyLimits = payload?.settings?.show_weekly_limits ?? this._settings.show_weekly_limits;
         const weeklyPercent = showWeeklyLimits ? payload?.weekly_percent : null;
         const weeklyResetDate = showWeeklyLimits ? payload?.weekly_reset_date_local : null;
+        const pace = this._calculateSessionPace(payload);
         const display = payload?.display || 'Codex: ismeretlen hiba';
         this._label.set_text(this._decorateDisplay(display));
+        this._applyPaceDot(pace);
         this._statusItem.label.set_text(`Állapot: ${payload?.status || 'unknown'}`);
         this._sessionItem.label.set_text(`Session: ${payload?.percent ?? 'n/a'}%${weeklyPercent !== null && weeklyPercent !== undefined ? ` / ${weeklyPercent}%` : ''}`);
+        this._paceItem.label.set_text(this._formatPaceText(pace));
         this._resetItem.label.set_text(`Reset: ${payload?.reset_time_local || 'nincs'} (${payload?.remaining_human_hu || 'n/a'})${weeklyResetDate ? ` / ${weeklyResetDate}` : ''}`);
         this._updatedItem.label.set_text(`Frissítve: ${payload?.last_updated ? payload.last_updated.slice(11, 16) : 'nincs'}`);
         this._sourceItem.label.set_text(`Forrás: ${payload?.source_label || 'nincs'}`);
         this._messageItem.label.set_text(`Üzenet: ${payload?.message || 'nincs'}`);
+    }
+
+    _calculateSessionPace(payload) {
+        const quotaRemainingPercent = Number(payload?.percent);
+        const remainingSeconds = Number(payload?.remaining_seconds);
+
+        if (!Number.isFinite(quotaRemainingPercent) || !Number.isFinite(remainingSeconds)) {
+            return {
+                level: 'unknown',
+                quotaRemainingPercent: null,
+                timeRemainingPercent: null,
+                delta: null,
+            };
+        }
+
+        const boundedQuotaRemainingPercent = Math.max(0, Math.min(100, quotaRemainingPercent));
+        const boundedRemainingSeconds = Math.max(0, Math.min(SESSION_SECONDS, remainingSeconds));
+        const timeRemainingPercent = (boundedRemainingSeconds / SESSION_SECONDS) * 100;
+        const delta = boundedQuotaRemainingPercent - timeRemainingPercent;
+
+        let level = 'neutral';
+        if (delta >= 15)
+            level = 'excellent';
+        else if (delta >= 5)
+            level = 'good';
+        else if (delta < -15)
+            level = 'critical';
+        else if (delta < -5)
+            level = 'warning';
+
+        return {
+            level,
+            quotaRemainingPercent: boundedQuotaRemainingPercent,
+            timeRemainingPercent,
+            delta,
+        };
+    }
+
+    _applyPaceDot(pace) {
+        this._paceDot.set_style_class_name(`codex-session-pace-dot codex-session-pace-${pace.level}`);
+    }
+
+    _formatPaceText(pace) {
+        if (pace.delta === null)
+            return 'Fogyási tempó: n/a';
+
+        const roundedDelta = Math.round(pace.delta);
+        const timePercent = Math.round(pace.timeRemainingPercent);
+        const quotaPercent = Math.round(pace.quotaRemainingPercent);
+
+        if (roundedDelta >= 5) {
+            return `Fogyási tempó: ${roundedDelta}%-kal jobb az időarányosnál (idő ${timePercent}%, keret ${quotaPercent}%)`;
+        }
+        if (roundedDelta <= -5) {
+            return `Fogyási tempó: ${Math.abs(roundedDelta)}%-kal gyorsabb az időarányosnál (idő ${timePercent}%, keret ${quotaPercent}%)`;
+        }
+        return `Fogyási tempó: időarányos (idő ${timePercent}%, keret ${quotaPercent}%)`;
     }
 
     _applySettings(settings) {

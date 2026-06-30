@@ -9,3 +9,35 @@
 .codex-session-label {
   padding: 0 6px;
 }
+
+.codex-session-pace-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  margin-left: 2px;
+  margin-right: 2px;
+}
+
+.codex-session-pace-excellent {
+  background-color: #22c55e;
+}
+
+.codex-session-pace-good {
+  background-color: #38bdf8;
+}
+
+.codex-session-pace-neutral {
+  background-color: #64748b;
+}
+
+.codex-session-pace-warning {
+  background-color: #f59e0b;
+}
+
+.codex-session-pace-critical {
+  background-color: #ef4444;
+}
+
+.codex-session-pace-unknown {
+  background-color: #94a3b8;
+}
