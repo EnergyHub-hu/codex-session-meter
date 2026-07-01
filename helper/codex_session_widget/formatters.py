@@ -62,6 +62,7 @@ def ok_payload(
     poll_interval_minutes: int | None = None,
     display_format: str = DEFAULT_DISPLAY_FORMAT,
     show_weekly_limits: bool = DEFAULT_SHOW_WEEKLY_LIMITS,
+    weekly_workdays: int = 5,
     panel_icon: str = "brain",
 ) -> dict:
     local_reset = reset_at.astimezone()
@@ -97,6 +98,7 @@ def ok_payload(
             **({"poll_interval_minutes": poll_interval_minutes} if poll_interval_minutes is not None else {}),
             "display_format": display_format,
             "show_weekly_limits": show_weekly_limits,
+            "weekly_workdays": weekly_workdays,
             "panel_icon": panel_icon,
         },
     }
@@ -111,6 +113,7 @@ def error_payload(
     poll_interval_minutes: int | None = None,
     display_format: str = DEFAULT_DISPLAY_FORMAT,
     show_weekly_limits: bool = DEFAULT_SHOW_WEEKLY_LIMITS,
+    weekly_workdays: int = 5,
     panel_icon: str = "brain",
 ) -> dict:
     payload = {
@@ -122,6 +125,7 @@ def error_payload(
             **({"poll_interval_minutes": poll_interval_minutes} if poll_interval_minutes is not None else {}),
             "display_format": display_format,
             "show_weekly_limits": show_weekly_limits,
+            "weekly_workdays": weekly_workdays,
             "panel_icon": panel_icon,
         },
     }

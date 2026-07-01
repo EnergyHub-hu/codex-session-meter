@@ -186,6 +186,7 @@ def rate_limits_to_payload(
     poll_interval_minutes: int,
     display_format: str,
     show_weekly_limits: bool,
+    weekly_workdays: int,
     panel_icon: str,
 ) -> dict[str, Any]:
     rate_limits = response.get("rateLimits")
@@ -208,5 +209,6 @@ def rate_limits_to_payload(
         poll_interval_minutes=poll_interval_minutes,
         display_format=display_format,
         show_weekly_limits=show_weekly_limits,
+        weekly_workdays=weekly_workdays,
         panel_icon=panel_icon,
     )

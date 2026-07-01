@@ -51,6 +51,7 @@ def _settings_kwargs(settings: dict[str, object]) -> dict[str, object]:
     return {
         "display_format": str(settings.get("display_format", "verbose")),
         "show_weekly_limits": bool(settings.get("show_weekly_limits", True)),
+        "weekly_workdays": int(settings.get("weekly_workdays", 5)),
         "poll_interval_minutes": int(settings.get("poll_interval_minutes", 1)),
         "panel_icon": str(settings.get("panel_icon", "brain")),
     }
@@ -64,6 +65,7 @@ def refresh_status() -> dict[str, Any]:
         "poll_interval_minutes": 1,
         "display_format": "verbose",
         "show_weekly_limits": True,
+        "weekly_workdays": 5,
         "panel_icon": "brain",
     }
 
@@ -77,6 +79,7 @@ def refresh_status() -> dict[str, Any]:
                 poll_interval_minutes=settings["poll_interval_minutes"],
                 display_format=settings["display_format"],
                 show_weekly_limits=settings["show_weekly_limits"],
+                weekly_workdays=settings["weekly_workdays"],
                 panel_icon=settings["panel_icon"],
             )
             save_success(payload)
@@ -94,6 +97,7 @@ def refresh_status() -> dict[str, Any]:
                 poll_interval_minutes=settings["poll_interval_minutes"],
                 display_format=settings["display_format"],
                 show_weekly_limits=settings["show_weekly_limits"],
+                weekly_workdays=settings["weekly_workdays"],
                 panel_icon=settings["panel_icon"],
             )
 
@@ -105,6 +109,7 @@ def refresh_status() -> dict[str, Any]:
             poll_interval_minutes=settings["poll_interval_minutes"],
             display_format=settings["display_format"],
             show_weekly_limits=settings["show_weekly_limits"],
+            weekly_workdays=settings["weekly_workdays"],
             panel_icon=settings["panel_icon"],
         )
     except ConfigError as exc:
@@ -117,6 +122,7 @@ def refresh_status() -> dict[str, Any]:
             poll_interval_minutes=settings["poll_interval_minutes"],
             display_format=settings["display_format"],
             show_weekly_limits=settings["show_weekly_limits"],
+            weekly_workdays=settings["weekly_workdays"],
             panel_icon=settings["panel_icon"],
         )
     except PermissionError as exc:
@@ -129,6 +135,7 @@ def refresh_status() -> dict[str, Any]:
             poll_interval_minutes=settings["poll_interval_minutes"],
             display_format=settings["display_format"],
             show_weekly_limits=settings["show_weekly_limits"],
+            weekly_workdays=settings["weekly_workdays"],
             panel_icon=settings["panel_icon"],
         )
     except RuntimeError as exc:
@@ -141,6 +148,7 @@ def refresh_status() -> dict[str, Any]:
             poll_interval_minutes=settings["poll_interval_minutes"],
             display_format=settings["display_format"],
             show_weekly_limits=settings["show_weekly_limits"],
+            weekly_workdays=settings["weekly_workdays"],
             panel_icon=settings["panel_icon"],
         )
     except (OSError, json.JSONDecodeError) as exc:
@@ -153,6 +161,7 @@ def refresh_status() -> dict[str, Any]:
             poll_interval_minutes=settings["poll_interval_minutes"],
             display_format=settings["display_format"],
             show_weekly_limits=settings["show_weekly_limits"],
+            weekly_workdays=settings["weekly_workdays"],
             panel_icon=settings["panel_icon"],
         )
     except Exception as exc:
@@ -165,6 +174,7 @@ def refresh_status() -> dict[str, Any]:
             poll_interval_minutes=settings["poll_interval_minutes"],
             display_format=settings["display_format"],
             show_weekly_limits=settings["show_weekly_limits"],
+            weekly_workdays=settings["weekly_workdays"],
             panel_icon=settings["panel_icon"],
         )
 

@@ -14,8 +14,8 @@
   width: 8px;
   height: 8px;
   border-radius: 999px;
-  margin-left: 2px;
-  margin-right: 2px;
+  margin-left: 1px;
+  margin-right: 1px;
 }
 
 .codex-session-pace-excellent {
@@ -27,11 +27,11 @@
 }
 
 .codex-session-pace-neutral {
-  background-color: #64748b;
+  background-color: #94a3b8;
 }
 
 .codex-session-pace-warning {
-  background-color: #f59e0b;
+  background-color: #fb923c;
 }
 
 .codex-session-pace-critical {
@@ -39,5 +39,14 @@
 }
 
 .codex-session-pace-unknown {
-  background-color: #94a3b8;
+  background-color: #64748b;
+}
+
+.codex-session-weekly-pace-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  margin-left: 1px;
+  margin-right: 1px;
+  border: 1px solid rgba(255,255,255,0.35);
 }

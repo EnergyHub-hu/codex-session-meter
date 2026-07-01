@@ -10,7 +10,7 @@ Session: 62% / 89% | Reset: 14:35 (1ó 54p) / 05.29.
 
 The repository contains two parts:
 
-- `extension/`: a GNOME Shell extension written in GJS that displays the panel label, lets you set the poll interval, format, and weekly limit visibility from the menu, and refreshes on the selected interval.
+- `extension/`: a GNOME Shell extension written in GJS that displays the panel label, lets you set the poll interval, format, weekly limit visibility, and weekly workday count from the menu, and refreshes on the selected interval.
 - `helper/`: a Python CLI named `codex-session-meter` that owns authentication discovery, data fetching/parsing, percentage calculation, cache, and safe logs.
 
 ## Current Data-Source Status
@@ -54,7 +54,7 @@ If GNOME does not load it immediately, log out/in, or use Extension Manager.
 codex-session-meter status --json
 codex-session-meter refresh --json
 codex-session-meter settings --json
-codex-session-meter configure --poll-interval 5 --display-format compact --hide-weekly-limits --json
+codex-session-meter configure --poll-interval 5 --display-format compact --weekly-workdays 5 --hide-weekly-limits --json
 codex-session-meter login
 codex-session-meter logout
 codex-session-meter auth-status
@@ -75,8 +75,10 @@ Menu-controlled preferences are stored in `~/.config/codex-session-meter/setting
 poll_interval_minutes = 1
 display_format = "verbose"
 show_weekly_limits = true
+weekly_workdays = 5
 panel_icon = "brain"
 
+# weekly_workdays values: 1-7
 # panel_icon values: brain, robot, chip, circuit, atom, terminal, fire, boom, star, sparkle
 ```
 

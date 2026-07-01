@@ -14,8 +14,10 @@ SESSION_SECONDS = 5 * 60 * 60
 DEFAULT_POLL_INTERVAL_MINUTES = 1
 DEFAULT_DISPLAY_FORMAT = "verbose"
 DEFAULT_SHOW_WEEKLY_LIMITS = True
+DEFAULT_WEEKLY_WORKDAYS = 5
 DEFAULT_PANEL_ICON = "brain"
 ALLOWED_POLL_INTERVALS = (1, 5, 10, 15)
+ALLOWED_WEEKLY_WORKDAYS = tuple(range(1, 8))
 ALLOWED_DISPLAY_FORMATS = frozenset({"verbose", "compact"})
 ALLOWED_PANEL_ICONS = frozenset({"brain", "robot", "chip", "circuit", "atom", "terminal", "fire", "boom", "star", "sparkle"})
 class ConfigError(ValueError):
@@ -61,6 +63,7 @@ def _default_settings() -> dict[str, object]:
         "poll_interval_minutes": DEFAULT_POLL_INTERVAL_MINUTES,
         "display_format": DEFAULT_DISPLAY_FORMAT,
         "show_weekly_limits": DEFAULT_SHOW_WEEKLY_LIMITS,
+        "weekly_workdays": DEFAULT_WEEKLY_WORKDAYS,
         "panel_icon": DEFAULT_PANEL_ICON,
     }
 
@@ -91,6 +94,14 @@ def _validate_settings(loaded: dict) -> dict[str, object]:
             raise ConfigError("show_weekly_limits must be a boolean.")
         settings["show_weekly_limits"] = value
 
+    value = loaded.get("weekly_workdays")
+    if value is not None:
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ConfigError("weekly_workdays must be an integer from 1 to 7.")
+        if value not in ALLOWED_WEEKLY_WORKDAYS:
+            raise ConfigError("weekly_workdays must be an integer from 1 to 7.")
+        settings["weekly_workdays"] = value
+
     value = loaded.get("panel_icon")
     if value is not None:
         if not isinstance(value, str):
@@ -116,6 +127,7 @@ def write_settings(
     poll_interval_minutes: int | None = None,
     display_format: str | None = None,
     show_weekly_limits: bool | None = None,
+    weekly_workdays: int | None = None,
     panel_icon: str | None = None,
 ) -> dict[str, object]:
     try:
@@ -137,6 +149,11 @@ def write_settings(
     if show_weekly_limits is not None:
         settings["show_weekly_limits"] = show_weekly_limits
 
+    if weekly_workdays is not None:
+        if weekly_workdays not in ALLOWED_WEEKLY_WORKDAYS:
+            raise ConfigError("weekly_workdays must be an integer from 1 to 7.")
+        settings["weekly_workdays"] = weekly_workdays
+
     if panel_icon is not None:
         normalized = panel_icon.strip().lower()
         if normalized not in ALLOWED_PANEL_ICONS:
@@ -150,6 +167,7 @@ def write_settings(
                 f'poll_interval_minutes = {settings["poll_interval_minutes"]}',
                 f'display_format = {json.dumps(settings["display_format"], ensure_ascii=False)}',
                 f'show_weekly_limits = {str(settings["show_weekly_limits"]).lower()}',
+                f'weekly_workdays = {settings["weekly_workdays"]}',
                 f'panel_icon = {json.dumps(settings["panel_icon"], ensure_ascii=False)}',
                 "",
             )

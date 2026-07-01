@@ -35,6 +35,7 @@ def test_rate_limits_payload_uses_primary_and_secondary_windows() -> None:
         poll_interval_minutes=1,
         display_format="verbose",
         show_weekly_limits=True,
+        weekly_workdays=5,
         panel_icon="brain",
     )
 
