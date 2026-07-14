@@ -25,6 +25,7 @@ widget.log
 config.toml
 browser-profile/
 playwright/.auth/
+codex_session_widget/_version.py
 
 # Editor/OS noise
 .DS_Store
