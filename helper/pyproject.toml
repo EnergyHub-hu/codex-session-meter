@@ -1,10 +1,13 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = [
+  "setuptools>=68",
+  "setuptools-scm>=8",
+]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "codex-session-meter"
-version = "0.3.0"
+dynamic = ["version"]
 description = "Local helper for an Ubuntu GNOME Codex weekly quota meter"
 requires-python = ">=3.10"
 dependencies = [
@@ -22,3 +25,6 @@ codex-session-meter = "codex_session_widget.cli:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["codex_session_widget*"]
+
+[tool.setuptools_scm]
+version_file = "codex_session_widget/_version.py"
