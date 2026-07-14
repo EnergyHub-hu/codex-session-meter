@@ -27,4 +27,5 @@ where = ["."]
 include = ["codex_session_widget*"]
 
 [tool.setuptools_scm]
+root = ".."
 version_file = "codex_session_widget/_version.py"
