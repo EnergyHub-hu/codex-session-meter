@@ -7,7 +7,7 @@ from codex_session_widget import fetcher
 
 def test_refresh_status_uses_codex_cli_api(monkeypatch) -> None:
     now = datetime(2026, 6, 6, 12, 0, tzinfo=timezone.utc)
-    reset_at = now + timedelta(hours=2)
+    reset_at = now + timedelta(days=7)
 
     monkeypatch.setattr(fetcher, "load_last_success", lambda: None)
     monkeypatch.setattr(fetcher, "save_success", lambda payload: None)
@@ -19,7 +19,7 @@ def test_refresh_status_uses_codex_cli_api(monkeypatch) -> None:
         "read_rate_limits",
         lambda: {
             "rateLimits": {
-                "primary": {"usedPercent": 60, "windowDurationMins": 300, "resetsAt": int(reset_at.timestamp())},
+                "primary": {"usedPercent": 60, "windowDurationMins": 10080, "resetsAt": int(reset_at.timestamp())},
                 "secondary": None,
                 "rateLimitReachedType": None,
             }
@@ -29,7 +29,7 @@ def test_refresh_status_uses_codex_cli_api(monkeypatch) -> None:
     payload = fetcher.refresh_status()
 
     assert payload["ok"] is True
-    assert payload["used_percent"] == 60
+    assert payload["weekly_used_percent"] == 60
     assert payload["source_label"] == "Codex CLI API"
 
 

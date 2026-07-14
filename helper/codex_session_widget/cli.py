@@ -36,10 +36,6 @@ def main(argv: list[str] | None = None) -> int:
     configure.add_argument("--display-format", choices=tuple(sorted(ALLOWED_DISPLAY_FORMATS)))
     configure.add_argument("--weekly-workdays", type=int, choices=ALLOWED_WEEKLY_WORKDAYS)
     configure.add_argument("--panel-icon", choices=tuple(sorted(ALLOWED_PANEL_ICONS)))
-    weekly_group = configure.add_mutually_exclusive_group()
-    weekly_group.add_argument("--show-weekly-limits", dest="show_weekly_limits", action="store_true")
-    weekly_group.add_argument("--hide-weekly-limits", dest="show_weekly_limits", action="store_false")
-    configure.set_defaults(show_weekly_limits=None)
     configure.add_argument("--json", action="store_true", help="Print updated settings as JSON")
 
     subparsers.add_parser("login")
@@ -69,7 +65,6 @@ def main(argv: list[str] | None = None) -> int:
             write_settings(
                 poll_interval_minutes=args.poll_interval,
                 display_format=args.display_format,
-                show_weekly_limits=args.show_weekly_limits,
                 weekly_workdays=args.weekly_workdays,
                 panel_icon=args.panel_icon,
             )

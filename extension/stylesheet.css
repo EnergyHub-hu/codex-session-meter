@@ -2,15 +2,15 @@
   spacing: 6px;
 }
 
-.codex-session-icon {
-  margin-top: 1px;
-}
-
 .codex-session-label {
   padding: 0 6px;
 }
 
-.codex-session-pace-dot {
+.codex-session-icon {
+  margin-top: 1px;
+}
+
+.codex-session-daily-limit-dot {
   width: 8px;
   height: 8px;
   border-radius: 999px;
@@ -18,35 +18,16 @@
   margin-right: 1px;
 }
 
-.codex-session-pace-excellent {
-  background-color: #22c55e;
-}
-
-.codex-session-pace-good {
-  background-color: #38bdf8;
-}
-
-.codex-session-pace-neutral {
-  background-color: #94a3b8;
-}
-
-.codex-session-pace-warning {
-  background-color: #fb923c;
-}
-
-.codex-session-pace-critical {
-  background-color: #ef4444;
-}
-
-.codex-session-pace-unknown {
-  background-color: #64748b;
-}
-
-.codex-session-weekly-pace-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  margin-left: 1px;
-  margin-right: 1px;
-  border: 1px solid rgba(255,255,255,0.35);
-}
+.codex-session-daily-limit-over { background-color: #22c55e; }
+.codex-session-daily-limit-100 { background-color: #84cc16; }
+.codex-session-daily-limit-90 { background-color: #a3c91c; }
+.codex-session-daily-limit-80 { background-color: #c5bf1d; }
+.codex-session-daily-limit-70 { background-color: #d8aa1d; }
+.codex-session-daily-limit-60 { background-color: #e6961f; }
+.codex-session-daily-limit-50 { background-color: #ec7f24; }
+.codex-session-daily-limit-40 { background-color: #ee6730; }
+.codex-session-daily-limit-30 { background-color: #ed4f3b; }
+.codex-session-daily-limit-20 { background-color: #e93843; }
+.codex-session-daily-limit-10 { background-color: #dc2626; }
+.codex-session-daily-limit-0 { background-color: #b91c1c; }
+.codex-session-daily-limit-unknown { background-color: #64748b; }

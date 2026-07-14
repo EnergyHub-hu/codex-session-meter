@@ -1,7 +1,7 @@
 {
   "uuid": "codex-session-meter@local",
-  "name": "Codex Session Meter",
-  "description": "Shows Codex five-hour session progress in the GNOME top panel.",
+  "name": "Codex Weekly Meter",
+  "description": "Shows remaining Codex weekly quota and its planned pace in the GNOME top panel.",
   "shell-version": ["45", "46", "47", "48"],
-  "version": 3
+  "version": 4
 }

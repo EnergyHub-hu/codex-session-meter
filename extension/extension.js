@@ -9,10 +9,11 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
+import {calculateWeeklyPace, dailyLimitIndicatorLevel, formatPanelDisplay} from './weekly-pace.js';
+
 const DEFAULT_SETTINGS = {
     poll_interval_minutes: 1,
     display_format: 'verbose',
-    show_weekly_limits: true,
     weekly_workdays: 5,
     panel_icon: 'brain',
 };
@@ -20,52 +21,20 @@ const POLL_INTERVALS = [1, 5, 10, 15];
 const DISPLAY_FORMATS = ['verbose', 'compact'];
 const WEEKLY_WORKDAYS = [1, 2, 3, 4, 5, 6, 7];
 const ICON_OPTIONS = {
-    brain: {
-        label: '🧠 Agy',
-        glyph: '🧠',
-    },
-    robot: {
-        label: '🤖 Robot',
-        glyph: '🤖',
-    },
-    chip: {
-        label: '💾 Chip',
-        glyph: '💾',
-    },
-    circuit: {
-        label: '⚙️ Áramkör',
-        glyph: '⚙️',
-    },
-    atom: {
-        label: '⚛️ Atom',
-        glyph: '⚛️',
-    },
-    terminal: {
-        label: '🖥️ Terminál',
-        glyph: '🖥️',
-    },
-    fire: {
-        label: '🔥 Tűz',
-        glyph: '🔥',
-    },
-    boom: {
-        label: '💥 Boom',
-        glyph: '💥',
-    },
-    star: {
-        label: '⭐ Star',
-        glyph: '⭐',
-    },
-    sparkle: {
-        label: '✨ Ragyogás',
-        glyph: '✨',
-    },
+    none: {label: 'Nincs', glyph: ''},
+    brain: {label: '🧠 Agy', glyph: '🧠'},
+    robot: {label: '🤖 Robot', glyph: '🤖'},
+    chip: {label: '💾 Chip', glyph: '💾'},
+    circuit: {label: '⚙️ Áramkör', glyph: '⚙️'},
+    atom: {label: '⚛️ Atom', glyph: '⚛️'},
+    terminal: {label: '🖥️ Terminál', glyph: '🖥️'},
+    fire: {label: '🔥 Tűz', glyph: '🔥'},
+    boom: {label: '💥 Boom', glyph: '💥'},
+    star: {label: '⭐ Star', glyph: '⭐'},
+    sparkle: {label: '✨ Ragyogás', glyph: '✨'},
 };
 const HELPER = GLib.build_filenamev([GLib.get_home_dir(), '.local', 'bin', 'codex-session-meter']);
 const HELPER_TIMEOUT_SECONDS = 20;
-const SESSION_SECONDS = 5 * 60 * 60;
-const DAY_SECONDS = 24 * 60 * 60;
-const WEEKLY_WINDOW_SECONDS = 7 * DAY_SECONDS;
 
 const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator extends PanelMenu.Button {
 
@@ -83,26 +52,20 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
         this._formatItems = new Map();
         this._weeklyWorkdayItems = new Map();
         this._panelIconItems = new Map();
-        this._panelIconGlyph = ICON_OPTIONS[this._settings.panel_icon].glyph;
 
         this._box = new St.BoxLayout({
             style_class: 'codex-session-box',
             y_align: Clutter.ActorAlign.CENTER,
         });
 
+        this._dailyLimitDot = new St.Widget({
+            style_class: 'codex-session-daily-limit-dot codex-session-daily-limit-unknown',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+
         this._icon = new St.Label({
-            text: this._panelIconGlyph,
+            text: ICON_OPTIONS[this._settings.panel_icon].glyph,
             style_class: 'codex-session-icon',
-            y_align: Clutter.ActorAlign.CENTER,
-        });
-
-        this._paceDot = new St.Widget({
-            style_class: 'codex-session-pace-dot codex-session-pace-unknown',
-            y_align: Clutter.ActorAlign.CENTER,
-        });
-
-        this._weeklyPaceDot = new St.Widget({
-            style_class: 'codex-session-weekly-pace-dot codex-session-pace-unknown',
             y_align: Clutter.ActorAlign.CENTER,
         });
 
@@ -112,26 +75,19 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
             style_class: 'codex-session-label',
         });
 
-        this._applyIconSettings();
-
         this._box.add_child(this._icon);
-        this._box.add_child(this._paceDot);
-        this._box.add_child(this._weeklyPaceDot);
+        this._box.add_child(this._dailyLimitDot);
         this._box.add_child(this._label);
         this.add_child(this._box);
 
         this._statusItem = new PopupMenu.PopupMenuItem('Állapot: töltés…', {reactive: false});
-        this._sessionItem = new PopupMenu.PopupMenuItem('Session: töltés…', {reactive: false});
-        this._paceItem = new PopupMenu.PopupMenuItem('Fogyási tempó: töltés…', {reactive: false});
-        this._weeklyPaceItem = new PopupMenu.PopupMenuItem('Heti fogyási tempó: töltés…', {reactive: false});
+        this._sessionItem = new PopupMenu.PopupMenuItem('Heti keret: töltés…', {reactive: false});
         this._resetItem = new PopupMenu.PopupMenuItem('Reset: töltés…', {reactive: false});
         this._updatedItem = new PopupMenu.PopupMenuItem('Frissítve: nincs', {reactive: false});
         this._sourceItem = new PopupMenu.PopupMenuItem('Forrás: nincs', {reactive: false});
         this._messageItem = new PopupMenu.PopupMenuItem('Üzenet: nincs', {reactive: false});
         this.menu.addMenuItem(this._statusItem);
         this.menu.addMenuItem(this._sessionItem);
-        this.menu.addMenuItem(this._paceItem);
-        this.menu.addMenuItem(this._weeklyPaceItem);
         this.menu.addMenuItem(this._resetItem);
         this.menu.addMenuItem(this._updatedItem);
         this.menu.addMenuItem(this._sourceItem);
@@ -142,7 +98,6 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
         this._addFormatItems();
         this._addWeeklyWorkdayItems();
         this._addIconItems();
-        this._showWeeklyLimitsItem = this._addToggleItem('Heti limitek megjelenítése', this._settings.show_weekly_limits, enabled => this._setWeeklyLimits(enabled));
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
         const refreshItem = new PopupMenu.PopupMenuItem('Refresh now');
@@ -199,172 +154,37 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
     }
 
     _applyPayload(payload) {
-        const showWeeklyLimits = payload?.settings?.show_weekly_limits ?? this._settings.show_weekly_limits;
-        const weeklyPercent = showWeeklyLimits ? payload?.weekly_percent : null;
-        const weeklyResetDate = showWeeklyLimits ? payload?.weekly_reset_date_local : null;
-        const pace = this._calculateSessionPace(payload);
-        const weeklyPace = this._calculateWeeklyPace(payload, showWeeklyLimits);
+        const weeklyPercent = payload?.weekly_percent;
+        const weeklyResetDate = payload?.weekly_reset_date_local;
+        const weeklyPace = this._calculateWeeklyPace(payload);
         const display = payload?.display || 'Codex: ismeretlen hiba';
-        this._label.set_text(this._decorateDisplay(display));
-        this._applyPaceDot(pace);
-        this._applyWeeklyPaceDot(weeklyPace);
+        const dailyRemainingPercent = weeklyPace.dailyRemainingPercent === null ? null : Math.round(weeklyPace.dailyRemainingPercent);
         this._statusItem.label.set_text(`Állapot: ${payload?.status || 'unknown'}`);
-        this._sessionItem.label.set_text(`Session: ${payload?.percent ?? 'n/a'}%${weeklyPercent !== null && weeklyPercent !== undefined ? ` / ${weeklyPercent}%` : ''}`);
-        this._paceItem.label.set_text(this._formatPaceText(pace));
-        this._weeklyPaceItem.label.set_text(this._formatWeeklyPaceText(weeklyPace));
-        this._resetItem.label.set_text(`Reset: ${payload?.reset_time_local || 'nincs'} (${payload?.remaining_human_hu || 'n/a'})${weeklyResetDate ? ` / ${weeklyResetDate}` : ''}`);
+        this._dailyLimitDot.set_style_class_name(`codex-session-daily-limit-dot codex-session-daily-limit-${dailyLimitIndicatorLevel(dailyRemainingPercent)}`);
+        this._label.set_text(formatPanelDisplay({
+            dailyRemainingPercent,
+            weeklyPercent,
+            weeklyResetDate,
+            displayFormat: this._settings.display_format,
+            fallback: display,
+        }));
+        this._sessionItem.label.set_text(`Heti keret: ${weeklyPercent ?? 'n/a'}%`);
+        this._resetItem.label.set_text(`Reset: ${weeklyResetDate || 'nincs'}`);
         this._updatedItem.label.set_text(`Frissítve: ${payload?.last_updated ? payload.last_updated.slice(11, 16) : 'nincs'}`);
         this._sourceItem.label.set_text(`Forrás: ${payload?.source_label || 'nincs'}`);
         this._messageItem.label.set_text(`Üzenet: ${payload?.message || 'nincs'}`);
     }
 
-    _calculateSessionPace(payload) {
-        const quotaRemainingPercent = Number(payload?.percent);
-        const remainingSeconds = Number(payload?.remaining_seconds);
-
-        if (!Number.isFinite(quotaRemainingPercent) || !Number.isFinite(remainingSeconds)) {
-            return {
-                level: 'unknown',
-                quotaRemainingPercent: null,
-                timeRemainingPercent: null,
-                delta: null,
-            };
-        }
-
-        const boundedQuotaRemainingPercent = Math.max(0, Math.min(100, quotaRemainingPercent));
-        const boundedRemainingSeconds = Math.max(0, Math.min(SESSION_SECONDS, remainingSeconds));
-        const timeRemainingPercent = (boundedRemainingSeconds / SESSION_SECONDS) * 100;
-        const delta = boundedQuotaRemainingPercent - timeRemainingPercent;
-
-        let level = 'neutral';
-        if (delta >= 15)
-            level = 'excellent';
-        else if (delta >= 5)
-            level = 'good';
-        else if (delta < -15)
-            level = 'critical';
-        else if (delta < -5)
-            level = 'warning';
-
-        return {
-            level,
-            quotaRemainingPercent: boundedQuotaRemainingPercent,
-            timeRemainingPercent,
-            delta,
-        };
-    }
-
-    _calculateWeeklyPace(payload, showWeeklyLimits) {
-        if (!showWeeklyLimits) {
-            return {
-                hidden: true,
-                level: 'unknown',
-                quotaRemainingPercent: null,
-                expectedQuotaRemainingPercent: null,
-                delta: null,
-                startedWorkdays: null,
-                workdays: this._settings.weekly_workdays,
-                budgetPerWorkday: null,
-            };
-        }
-
+    _calculateWeeklyPace(payload) {
         const quotaRemainingPercent = Number(payload?.weekly_percent);
-        const resetAtMillis = Date.parse(payload?.weekly_reset_at || '');
-        const lastUpdatedMillis = Date.parse(payload?.last_updated || '');
         const workdays = WEEKLY_WORKDAYS.includes(this._settings.weekly_workdays) ? this._settings.weekly_workdays : DEFAULT_SETTINGS.weekly_workdays;
 
-        if (!Number.isFinite(quotaRemainingPercent) || !Number.isFinite(resetAtMillis) || !Number.isFinite(lastUpdatedMillis)) {
-            return {
-                hidden: false,
-                level: 'unknown',
-                quotaRemainingPercent: null,
-                expectedQuotaRemainingPercent: null,
-                delta: null,
-                startedWorkdays: null,
-                workdays,
-                budgetPerWorkday: null,
-            };
-        }
-
-        const boundedQuotaRemainingPercent = Math.max(0, Math.min(100, quotaRemainingPercent));
-        const windowStartMillis = resetAtMillis - (WEEKLY_WINDOW_SECONDS * 1000);
-        const elapsedSeconds = Math.max(0, Math.min(WEEKLY_WINDOW_SECONDS, (lastUpdatedMillis - windowStartMillis) / 1000));
-        const startedCalendarDays = elapsedSeconds <= 0 ? 0 : Math.floor(elapsedSeconds / DAY_SECONDS) + 1;
-        const startedWorkdays = Math.max(0, Math.min(workdays, startedCalendarDays));
-        const budgetPerWorkday = 100 / workdays;
-        const allowedUsedPercent = Math.min(100, startedWorkdays * budgetPerWorkday);
-        const expectedQuotaRemainingPercent = Math.max(0, 100 - allowedUsedPercent);
-        const delta = boundedQuotaRemainingPercent - expectedQuotaRemainingPercent;
-
-        let level = 'good';
-        if (delta >= 15)
-            level = 'excellent';
-        else if (delta < -15)
-            level = 'critical';
-        else if (delta < -5)
-            level = 'warning';
-
-        return {
-            hidden: false,
-            level,
-            quotaRemainingPercent: boundedQuotaRemainingPercent,
-            expectedQuotaRemainingPercent,
-            delta,
-            startedWorkdays,
+        return calculateWeeklyPace({
+            quotaRemainingPercent,
+            resetAt: payload?.weekly_reset_at,
+            lastUpdated: payload?.last_updated,
             workdays,
-            budgetPerWorkday,
-        };
-    }
-
-    _applyPaceDot(pace) {
-        this._paceDot.set_style_class_name(`codex-session-pace-dot codex-session-pace-${pace.level}`);
-    }
-
-    _applyWeeklyPaceDot(pace) {
-        if (pace.hidden) {
-            this._weeklyPaceDot.hide();
-            return;
-        }
-        this._weeklyPaceDot.show();
-        this._weeklyPaceDot.set_style_class_name(`codex-session-weekly-pace-dot codex-session-pace-${pace.level}`);
-    }
-
-    _formatPaceText(pace) {
-        if (pace.delta === null)
-            return 'Fogyási tempó: n/a';
-
-        const roundedDelta = Math.round(pace.delta);
-        const timePercent = Math.round(pace.timeRemainingPercent);
-        const quotaPercent = Math.round(pace.quotaRemainingPercent);
-
-        if (roundedDelta >= 5) {
-            return `Fogyási tempó: ${roundedDelta}%-kal jobb az időarányosnál (idő ${timePercent}%, keret ${quotaPercent}%)`;
-        }
-        if (roundedDelta <= -5) {
-            return `Fogyási tempó: ${Math.abs(roundedDelta)}%-kal gyorsabb az időarányosnál (idő ${timePercent}%, keret ${quotaPercent}%)`;
-        }
-        return `Fogyási tempó: időarányos (idő ${timePercent}%, keret ${quotaPercent}%)`;
-    }
-
-    _formatWeeklyPaceText(pace) {
-        if (pace.hidden)
-            return 'Heti fogyási tempó: rejtve';
-        if (pace.delta === null)
-            return 'Heti fogyási tempó: n/a';
-
-        const roundedDelta = Math.round(pace.delta);
-        const quotaPercent = Math.round(pace.quotaRemainingPercent);
-        const expectedPercent = Math.round(pace.expectedQuotaRemainingPercent);
-        const dailyBudget = Math.round(pace.budgetPerWorkday);
-        const workdayText = `${pace.startedWorkdays}/${pace.workdays} munkanap`;
-
-        if (roundedDelta >= 5) {
-            return `Heti fogyási tempó: ${roundedDelta}%-kal jobb a munkanap-arányosnál (keret ${quotaPercent}%, elvárt min. ${expectedPercent}%, ${workdayText}, napi keret ${dailyBudget}%)`;
-        }
-        if (roundedDelta <= -5) {
-            return `Heti fogyási tempó: ${Math.abs(roundedDelta)}%-kal gyorsabb a munkanap-arányosnál (keret ${quotaPercent}%, elvárt min. ${expectedPercent}%, ${workdayText}, napi keret ${dailyBudget}%)`;
-        }
-        return `Heti fogyási tempó: munkanap-arányos (keret ${quotaPercent}%, elvárt min. ${expectedPercent}%, ${workdayText}, napi keret ${dailyBudget}%)`;
+        });
     }
 
     _applySettings(settings) {
@@ -374,15 +194,14 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
         const next = {
             poll_interval_minutes: POLL_INTERVALS.includes(settings.poll_interval_minutes) ? settings.poll_interval_minutes : this._settings.poll_interval_minutes,
             display_format: DISPLAY_FORMATS.includes(settings.display_format) ? settings.display_format : this._settings.display_format,
-            show_weekly_limits: typeof settings.show_weekly_limits === 'boolean' ? settings.show_weekly_limits : this._settings.show_weekly_limits,
             weekly_workdays: WEEKLY_WORKDAYS.includes(settings.weekly_workdays) ? settings.weekly_workdays : this._settings.weekly_workdays,
             panel_icon: Object.prototype.hasOwnProperty.call(ICON_OPTIONS, settings.panel_icon) ? settings.panel_icon : this._settings.panel_icon,
         };
 
-        const changed = next.poll_interval_minutes !== this._settings.poll_interval_minutes || next.display_format !== this._settings.display_format || next.show_weekly_limits !== this._settings.show_weekly_limits || next.weekly_workdays !== this._settings.weekly_workdays || next.panel_icon !== this._settings.panel_icon;
+        const changed = next.poll_interval_minutes !== this._settings.poll_interval_minutes || next.display_format !== this._settings.display_format || next.weekly_workdays !== this._settings.weekly_workdays || next.panel_icon !== this._settings.panel_icon;
         this._settings = next;
         this._refreshSeconds = this._settings.poll_interval_minutes * 60;
-        this._applyIconSettings();
+        this._applyPanelIcon();
         this._syncMenuState();
 
         if (changed)
@@ -444,14 +263,6 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
         this.menu.addMenuItem(panelIconMenu);
     }
 
-    _addToggleItem(label, initialValue, onActivate) {
-        const item = new PopupMenu.PopupMenuItem(label);
-        item.connect('activate', () => onActivate(!this._settings.show_weekly_limits));
-        this.menu.addMenuItem(item);
-        item._toggleValue = initialValue;
-        return item;
-    }
-
     _syncMenuState() {
         for (const [minutes, item] of this._pollIntervalItems.entries()) {
             item.setOrnament?.(minutes === this._settings.poll_interval_minutes ? PopupMenu.Ornament.CHECK : PopupMenu.Ornament.NONE);
@@ -469,7 +280,6 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
             item.setOrnament?.(iconName === this._settings.panel_icon ? PopupMenu.Ornament.CHECK : PopupMenu.Ornament.NONE);
         }
 
-        this._showWeeklyLimitsItem.setOrnament?.(this._settings.show_weekly_limits ? PopupMenu.Ornament.CHECK : PopupMenu.Ornament.NONE);
     }
 
     _setPollInterval(minutes) {
@@ -486,21 +296,6 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
         });
     }
 
-    _setPanelIcon(iconName) {
-        this._runJson([HELPER, 'configure', '--panel-icon', iconName, '--json'], payload => {
-            this._applySettings(payload);
-            this.refresh();
-        });
-    }
-
-    _setWeeklyLimits(enabled) {
-        const flag = enabled ? '--show-weekly-limits' : '--hide-weekly-limits';
-        this._runJson([HELPER, 'configure', flag, '--json'], payload => {
-            this._applySettings(payload);
-            this.refresh();
-        });
-    }
-
     _setWeeklyWorkdays(days) {
         this._runJson([HELPER, 'configure', '--weekly-workdays', String(days), '--json'], payload => {
             this._applySettings(payload);
@@ -508,15 +303,17 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
         });
     }
 
-    _decorateDisplay(display) {
-        return display;
+    _setPanelIcon(iconName) {
+        this._runJson([HELPER, 'configure', '--panel-icon', iconName, '--json'], payload => {
+            this._applySettings(payload);
+            this.refresh();
+        });
     }
 
-    _applyIconSettings() {
-        const panelIcon = ICON_OPTIONS[this._settings.panel_icon] ?? ICON_OPTIONS.brain;
-
-        this._panelIconGlyph = panelIcon.glyph;
-        this._icon.set_text(this._panelIconGlyph);
+    _applyPanelIcon() {
+        const icon = ICON_OPTIONS[this._settings.panel_icon];
+        this._icon.set_text(icon.glyph);
+        this._icon.visible = this._settings.panel_icon !== 'none';
     }
 
     _runJson(argv, callback) {

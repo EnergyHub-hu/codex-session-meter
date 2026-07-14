@@ -24,7 +24,7 @@ class CodexApiUnavailable(CodexApiError):
 
 APP_SERVER_TIMEOUT_SECONDS = 15.0
 APP_SERVER_SHUTDOWN_SECONDS = 2.0
-CLIENT_VERSION = "0.2.1"
+CLIENT_VERSION = "0.3.0"
 
 
 def _codex_command() -> str:
@@ -185,7 +185,6 @@ def rate_limits_to_payload(
     *,
     poll_interval_minutes: int,
     display_format: str,
-    show_weekly_limits: bool,
     weekly_workdays: int,
     panel_icon: str,
 ) -> dict[str, Any]:
@@ -193,22 +192,17 @@ def rate_limits_to_payload(
     if not isinstance(rate_limits, dict):
         raise CodexApiUnavailable("Codex rate limit response is missing rateLimits.")
 
-    primary_percent, primary_reset_at = _window_values(rate_limits.get("primary"), now)
-    if primary_reset_at is None:
-        raise CodexApiUnavailable("Codex rate limit response is missing primary reset time.")
-
-    secondary_percent, secondary_reset_at = _window_values(rate_limits.get("secondary"), now)
+    weekly_used_percent, weekly_reset_at = _window_values(rate_limits.get("primary"), now)
+    if weekly_used_percent is None or weekly_reset_at is None:
+        raise CodexApiUnavailable("Codex rate limit response is missing weekly usage data.")
     return ok_payload(
-        primary_reset_at,
+        weekly_reset_at,
         now,
         "codex_app_server:account/rateLimits/read",
-        percent=primary_percent,
-        weekly_percent=secondary_percent,
-        weekly_reset_at=secondary_reset_at,
+        weekly_used_percent=weekly_used_percent,
         source_label="Codex CLI API",
         poll_interval_minutes=poll_interval_minutes,
         display_format=display_format,
-        show_weekly_limits=show_weekly_limits,
         weekly_workdays=weekly_workdays,
         panel_icon=panel_icon,
     )

@@ -9,7 +9,7 @@
 ## Official Facts Found
 
 - Codex is included in ChatGPT plans.
-- Codex local messages and cloud tasks share a five-hour usage window.
+- The current widget configuration treats the Codex CLI primary window as the single weekly usage quota.
 - The docs point users to a Codex usage dashboard for current limits.
 - Codex CLI stores auth in `$CODEX_HOME/auth.json`, defaulting to `~/.codex/auth.json`.
 - `codex app-server` supports JSON-RPC over stdio.
@@ -21,8 +21,8 @@ The helper uses the Codex CLI API only:
 
 - Auth: `codex-session-meter login` delegates to `codex login`.
 - Start `codex app-server --stdio` and call JSON-RPC method `account/rateLimits/read`.
-- The primary window drives the session percentage and reset time.
-- The secondary window is displayed as the weekly/secondary limit when present.
+- The primary window drives the weekly percentage and reset time.
+- The weekly quota is divided evenly across the configured 1-7 calendar days for pace reporting.
 - Current no-source behavior: return an auth/data-source error while keeping any last successful cached value.
 - No direct HTTP client is used in the helper; any network access would be internal to the Codex CLI process.
 
@@ -34,7 +34,7 @@ This avoids alternate data-source discovery, scraping, browser profile access, c
 2. The helper starts `codex app-server --stdio`.
 3. It sends `initialize` with client name `codex-session-meter`.
 4. It sends `account/rateLimits/read`.
-5. It converts `rateLimits.primary` and `rateLimits.secondary` into the widget payload.
+5. It converts `rateLimits.primary` into the weekly widget payload.
 
 The helper never calls a public HTTP endpoint directly.
 

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "codex-session-meter"
-version = "0.2.1"
-description = "Local helper for an Ubuntu GNOME Codex session progress meter"
+version = "0.3.0"
+description = "Local helper for an Ubuntu GNOME Codex weekly quota meter"
 requires-python = ">=3.10"
 dependencies = [
   "tomli>=2.0; python_version < '3.11'",

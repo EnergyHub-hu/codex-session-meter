@@ -10,20 +10,16 @@ import pytest
 from codex_session_widget import codex_api
 
 
-def test_rate_limits_payload_uses_primary_and_secondary_windows() -> None:
+def test_rate_limits_payload_uses_primary_as_the_weekly_window() -> None:
     now = datetime.fromisoformat("2026-06-06T12:00:00+00:00")
     response = {
         "rateLimits": {
             "primary": {
                 "usedPercent": 62,
-                "windowDurationMins": 300,
+                "windowDurationMins": 10080,
                 "resetsAt": 1780754400,
             },
-            "secondary": {
-                "usedPercent": 89,
-                "windowDurationMins": 10080,
-                "resetsAt": 1780963200,
-            },
+            "secondary": None,
             "rateLimitReachedType": None,
         },
         "individualLimit": None,
@@ -34,15 +30,15 @@ def test_rate_limits_payload_uses_primary_and_secondary_windows() -> None:
         now,
         poll_interval_minutes=1,
         display_format="verbose",
-        show_weekly_limits=True,
         weekly_workdays=5,
         panel_icon="brain",
     )
 
     assert payload["ok"] is True
-    assert payload["used_percent"] == 62
-    assert payload["percent"] == 38
-    assert payload["weekly_percent"] == 11
+    assert payload["weekly_used_percent"] == 62
+    assert payload["weekly_percent"] == 38
+    assert datetime.fromisoformat(payload["weekly_reset_at"]).timestamp() == 1780754400
+    assert "Session" not in payload["display"]
     assert payload["source"] == "codex_app_server:account/rateLimits/read"
     assert payload["source_label"] == "Codex CLI API"
 
@@ -106,7 +102,7 @@ def test_read_rate_limits_sends_initialize_then_rate_limit_request(monkeypatch) 
                 "clientInfo": {
                     "name": "codex-session-meter",
                         "title": "Codex Session Meter",
-                    "version": "0.2.1",
+                    "version": "0.3.0",
                 }
             },
         },

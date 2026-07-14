@@ -1,21 +1,21 @@
-# Codex Session Meter
+# Codex Weekly Meter
 
-Ubuntu GNOME top-panel widget for showing local Codex five-hour session progress.
+Ubuntu GNOME top-panel widget for showing the remaining Codex weekly quota and its planned consumption pace.
 
 Target display:
 
 ```text
-Session: 62% / 89% | Reset: 14:35 (1ó 54p) / 05.29.
+<zöld kör> 125% / 89% | 05.29.
 ```
 
 The repository contains two parts:
 
-- `extension/`: a GNOME Shell extension written in GJS that displays the panel label, lets you set the poll interval, format, weekly limit visibility, and weekly workday count from the menu, and refreshes on the selected interval.
+- `extension/`: a GNOME Shell extension written in GJS that displays the panel label, lets you set the poll interval, format, and number of days across which to allocate the weekly quota, and refreshes on the selected interval.
 - `helper/`: a Python CLI named `codex-session-meter` that owns authentication discovery, data fetching/parsing, percentage calculation, cache, and safe logs.
 
 ## Current Data-Source Status
 
-The helper uses the Codex CLI app-server API only. It starts `codex app-server --stdio` and calls the JSON-RPC method `account/rateLimits/read`, which returns the current primary and secondary rate-limit windows.
+The helper uses the Codex CLI app-server API only. It starts `codex app-server --stdio` and calls the JSON-RPC method `account/rateLimits/read`. The returned primary window is treated as the weekly quota.
 
 - Auth comes from the normal Codex CLI login at `~/.codex/auth.json` or `$CODEX_HOME/auth.json`.
 - Codex usage data comes only from `codex app-server --stdio` and `account/rateLimits/read`.
@@ -54,7 +54,7 @@ If GNOME does not load it immediately, log out/in, or use Extension Manager.
 codex-session-meter status --json
 codex-session-meter refresh --json
 codex-session-meter settings --json
-codex-session-meter configure --poll-interval 5 --display-format compact --weekly-workdays 5 --hide-weekly-limits --json
+codex-session-meter configure --poll-interval 5 --display-format compact --weekly-workdays 5 --json
 codex-session-meter login
 codex-session-meter logout
 codex-session-meter auth-status
@@ -74,12 +74,11 @@ Menu-controlled preferences are stored in `~/.config/codex-session-meter/setting
 ```toml
 poll_interval_minutes = 1
 display_format = "verbose"
-show_weekly_limits = true
 weekly_workdays = 5
 panel_icon = "brain"
 
-# weekly_workdays values: 1-7
-# panel_icon values: brain, robot, chip, circuit, atom, terminal, fire, boom, star, sparkle
+# weekly_workdays values: 1-7; 100% is divided evenly across these calendar days
+# panel_icon values: none, brain, robot, chip, circuit, atom, terminal, fire, boom, star, sparkle
 ```
 
 Never commit captured HAR files, cookies, Codex auth files, tokens, auth headers, or full raw responses.
