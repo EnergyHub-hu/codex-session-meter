@@ -1,4 +1,13 @@
 const DAY_MILLIS = 24 * 60 * 60 * 1000;
+const DAILY_LIMIT_COLOR_STOPS = [
+    [0, '#D1495B'],
+    [20, '#EE964B'],
+    [40, '#F4D35E'],
+    [55, '#99D98C'],
+    [70, '#52B69A'],
+    [85, '#34A0A4'],
+    [100, '#168AAD'],
+];
 
 function localCalendarDayMillis(date) {
     return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
@@ -17,8 +26,28 @@ export function dailyLimitIndicatorColor(dailyRemainingPercent) {
         return null;
 
     const boundedPercent = Math.max(0, Math.min(100, dailyRemainingPercent));
-    const hue = Math.round(boundedPercent * 1.2);
-    return `hsl(${hue}, 75%, 45%)`;
+    for (let index = 1; index < DAILY_LIMIT_COLOR_STOPS.length; index++) {
+        const [upperPercent, upperColor] = DAILY_LIMIT_COLOR_STOPS[index];
+        const [lowerPercent, lowerColor] = DAILY_LIMIT_COLOR_STOPS[index - 1];
+        if (boundedPercent > upperPercent)
+            continue;
+
+        const ratio = (boundedPercent - lowerPercent) / (upperPercent - lowerPercent);
+        const lowerRgb = hexToRgb(lowerColor);
+        const upperRgb = hexToRgb(upperColor);
+        const rgb = lowerRgb.map((component, componentIndex) => Math.round(component + (upperRgb[componentIndex] - component) * ratio));
+        return rgbToHex(rgb);
+    }
+
+    return DAILY_LIMIT_COLOR_STOPS[DAILY_LIMIT_COLOR_STOPS.length - 1][1];
+}
+
+function hexToRgb(hex) {
+    return [1, 3, 5].map(index => Number.parseInt(hex.slice(index, index + 2), 16));
+}
+
+function rgbToHex(rgb) {
+    return `#${rgb.map(component => component.toString(16).padStart(2, '0')).join('').toUpperCase()}`;
 }
 
 export function formatPanelDisplay({dailyRemainingPercent, weeklyPercent, weeklyResetDate, displayFormat, fallback}) {

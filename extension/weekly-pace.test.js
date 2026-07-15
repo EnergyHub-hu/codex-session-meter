@@ -67,9 +67,14 @@ test('normalizes daily quota drops for four and three workdays', () => {
 });
 
 test('colors the daily indicator proportionally from red to green', () => {
-    assert.equal(dailyLimitIndicatorColor(0), 'hsl(0, 75%, 45%)');
-    assert.equal(dailyLimitIndicatorColor(50), 'hsl(60, 75%, 45%)');
-    assert.equal(dailyLimitIndicatorColor(100), 'hsl(120, 75%, 45%)');
+    assert.equal(dailyLimitIndicatorColor(0), '#D1495B');
+    assert.equal(dailyLimitIndicatorColor(20), '#EE964B');
+    assert.equal(dailyLimitIndicatorColor(40), '#F4D35E');
+    assert.equal(dailyLimitIndicatorColor(55), '#99D98C');
+    assert.equal(dailyLimitIndicatorColor(70), '#52B69A');
+    assert.equal(dailyLimitIndicatorColor(85), '#34A0A4');
+    assert.equal(dailyLimitIndicatorColor(100), '#168AAD');
+    assert.equal(dailyLimitIndicatorColor(50), '#B7D77D');
     assert.equal(dailyLimitIndicatorColor(null), null);
 });
 
