@@ -9,7 +9,16 @@ export function dailyLimitIndicatorLevel(dailyRemainingPercent) {
         return 'unknown';
     if (dailyRemainingPercent > 100)
         return 'over';
-    return String(Math.ceil(Math.max(0, dailyRemainingPercent) / 10) * 10);
+    return String(Math.round(Math.max(0, dailyRemainingPercent)));
+}
+
+export function dailyLimitIndicatorColor(dailyRemainingPercent) {
+    if (!Number.isFinite(dailyRemainingPercent))
+        return null;
+
+    const boundedPercent = Math.max(0, Math.min(100, dailyRemainingPercent));
+    const hue = Math.round(boundedPercent * 1.2);
+    return `hsl(${hue}, 75%, 45%)`;
 }
 
 export function formatPanelDisplay({dailyRemainingPercent, weeklyPercent, weeklyResetDate, displayFormat, fallback}) {

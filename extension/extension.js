@@ -9,7 +9,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
-import {calculateWeeklyPace, dailyLimitIndicatorLevel, formatPanelDisplay} from './weekly-pace.js';
+import {calculateWeeklyPace, dailyLimitIndicatorColor, dailyLimitIndicatorLevel, formatPanelDisplay} from './weekly-pace.js';
 
 const DEFAULT_SETTINGS = {
     poll_interval_minutes: 1,
@@ -161,6 +161,8 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
         const dailyRemainingPercent = weeklyPace.dailyRemainingPercent === null ? null : Math.round(weeklyPace.dailyRemainingPercent);
         this._statusItem.label.set_text(`Állapot: ${payload?.status || 'unknown'}`);
         this._dailyLimitDot.set_style_class_name(`codex-session-daily-limit-dot codex-session-daily-limit-${dailyLimitIndicatorLevel(dailyRemainingPercent)}`);
+        const indicatorColor = dailyLimitIndicatorColor(dailyRemainingPercent);
+        this._dailyLimitDot.set_style(indicatorColor ? `background-color: ${indicatorColor};` : '');
         this._label.set_text(formatPanelDisplay({
             dailyRemainingPercent,
             weeklyPercent,
