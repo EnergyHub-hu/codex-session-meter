@@ -65,6 +65,42 @@ def test_build_display_shows_the_weekly_quota(budapest_tz) -> None:
     assert build_display(11, weekly_reset_at, now) == "Heti keret 89% | Reset 05.29."
 
 
+def test_ok_payload_includes_session_window_when_present(budapest_tz) -> None:
+    now = datetime.fromisoformat("2026-05-22T12:41:00+02:00")
+    weekly_reset_at = datetime.fromisoformat("2026-05-29T16:14:00+02:00")
+    session_reset_at = datetime.fromisoformat("2026-05-22T16:41:00+02:00")
+
+    payload = ok_payload(
+        weekly_reset_at,
+        now,
+        "test_source",
+        weekly_used_percent=11,
+        session_used_percent=80,
+        session_reset_at=session_reset_at,
+    )
+
+    assert payload["session_used_percent"] == 80
+    assert payload["session_percent"] == 20
+    assert payload["session_reset_at"] == "2026-05-22T16:41:00+02:00"
+    assert payload["session_reset_time_local"] == "16:41"
+    assert payload["session_remaining_seconds"] == 4 * 3600
+    assert payload["session_remaining_human_hu"] == "4ó 0p"
+
+
+def test_ok_payload_omits_session_fields_without_session_window(budapest_tz) -> None:
+    now = datetime.fromisoformat("2026-05-22T12:41:00+02:00")
+    weekly_reset_at = datetime.fromisoformat("2026-05-29T16:14:00+02:00")
+
+    payload = ok_payload(weekly_reset_at, now, "test_source", weekly_used_percent=11)
+
+    assert payload["session_percent"] is None
+    assert payload["session_used_percent"] is None
+    assert payload["session_reset_at"] is None
+    assert payload["session_reset_time_local"] is None
+    assert payload["session_remaining_seconds"] is None
+    assert payload["session_remaining_human_hu"] is None
+
+
 def test_error_payload_auth_required_shape() -> None:
     payload = error_payload("auth_required", "Codex: bejelentkezés kell", "Open the page and sign in.")
 

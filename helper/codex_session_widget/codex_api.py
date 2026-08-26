@@ -165,9 +165,12 @@ def read_rate_limits(*, timeout_seconds: float = APP_SERVER_TIMEOUT_SECONDS) -> 
         _cleanup_process(process)
 
 
-def _window_values(window: object, now: datetime) -> tuple[int | None, datetime | None]:
+SESSION_WINDOW_MAX_MINUTES = 2 * 24 * 60
+
+
+def _window_values(window: object, now: datetime) -> tuple[int | None, datetime | None, int | None]:
     if not isinstance(window, dict):
-        return None, None
+        return None, None, None
 
     percent_value = window.get("usedPercent")
     try:
@@ -176,7 +179,42 @@ def _window_values(window: object, now: datetime) -> tuple[int | None, datetime 
         percent = None
 
     reset_at = parse_datetime(window.get("resetsAt"), now=now)
-    return percent, reset_at
+
+    minutes_value = window.get("windowDurationMins")
+    try:
+        window_minutes = int(minutes_value) if minutes_value is not None else None
+    except (TypeError, ValueError):
+        window_minutes = None
+
+    return percent, reset_at, window_minutes
+
+
+def _classify_windows(
+    rate_limits: dict[str, Any],
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    windows = []
+    for key in ("primary", "secondary"):
+        window = rate_limits.get(key)
+        if isinstance(window, dict) and window.get("usedPercent") is not None and window.get("resetsAt") is not None:
+            windows.append((key, window))
+
+    if not windows:
+        return None, None
+    if len(windows) == 1:
+        return windows[0][1], None
+
+    def is_weekly(entry: tuple[str, dict[str, Any]]) -> bool:
+        minutes = entry[1].get("windowDurationMins")
+        try:
+            return int(minutes) >= SESSION_WINDOW_MAX_MINUTES
+        except (TypeError, ValueError):
+            return False
+
+    weekly_entries = [entry for entry in windows if is_weekly(entry)]
+    session_entries = [entry for entry in windows if not is_weekly(entry)]
+    if len(weekly_entries) == 1:
+        return weekly_entries[0][1], session_entries[0][1] if session_entries else None
+    return windows[0][1], windows[1][1]
 
 
 def rate_limits_to_payload(
@@ -192,9 +230,14 @@ def rate_limits_to_payload(
     if not isinstance(rate_limits, dict):
         raise CodexApiUnavailable("Codex rate limit response is missing rateLimits.")
 
-    weekly_used_percent, weekly_reset_at = _window_values(rate_limits.get("primary"), now)
+    weekly_window, session_window = _classify_windows(rate_limits)
+    weekly_used_percent, weekly_reset_at, _ = _window_values(weekly_window, now)
     if weekly_used_percent is None or weekly_reset_at is None:
         raise CodexApiUnavailable("Codex rate limit response is missing weekly usage data.")
+
+    session_used_percent, session_reset_at, _ = (
+        _window_values(session_window, now) if session_window is not None else (None, None, None)
+    )
     return ok_payload(
         weekly_reset_at,
         now,
@@ -205,4 +248,6 @@ def rate_limits_to_payload(
         display_format=display_format,
         weekly_workdays=weekly_workdays,
         panel_icon=panel_icon,
+        session_used_percent=session_used_percent,
+        session_reset_at=session_reset_at,
     )

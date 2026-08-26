@@ -9,7 +9,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
-import {calculateWeeklyPace, dailyLimitIndicatorColor, dailyLimitIndicatorLevel, formatPanelDisplay} from './weekly-pace.js';
+import {calculateWeeklyPace, dailyLimitIndicatorColor, dailyLimitIndicatorLevel, formatPanelDisplay, resolveDailyRemainingPercent} from './weekly-pace.js';
 
 const DEFAULT_SETTINGS = {
     poll_interval_minutes: 1,
@@ -83,12 +83,14 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
         this._statusItem = new PopupMenu.PopupMenuItem('Állapot: töltés…', {reactive: false});
         this._sessionItem = new PopupMenu.PopupMenuItem('Heti keret: töltés…', {reactive: false});
         this._resetItem = new PopupMenu.PopupMenuItem('Reset: töltés…', {reactive: false});
+        this._sessionResetItem = new PopupMenu.PopupMenuItem('5 órás reset: nincs', {reactive: false});
         this._updatedItem = new PopupMenu.PopupMenuItem('Frissítve: nincs', {reactive: false});
         this._sourceItem = new PopupMenu.PopupMenuItem('Forrás: nincs', {reactive: false});
         this._messageItem = new PopupMenu.PopupMenuItem('Üzenet: nincs', {reactive: false});
         this.menu.addMenuItem(this._statusItem);
         this.menu.addMenuItem(this._sessionItem);
         this.menu.addMenuItem(this._resetItem);
+        this.menu.addMenuItem(this._sessionResetItem);
         this.menu.addMenuItem(this._updatedItem);
         this.menu.addMenuItem(this._sourceItem);
         this.menu.addMenuItem(this._messageItem);
@@ -156,9 +158,8 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
     _applyPayload(payload) {
         const weeklyPercent = payload?.weekly_percent;
         const weeklyResetDate = payload?.weekly_reset_date_local;
-        const weeklyPace = this._calculateWeeklyPace(payload);
         const display = payload?.display || 'Codex: ismeretlen hiba';
-        const dailyRemainingPercent = weeklyPace.dailyRemainingPercent === null ? null : Math.round(weeklyPace.dailyRemainingPercent);
+        const dailyRemainingPercent = this._dailyRemainingPercent(payload);
         this._statusItem.label.set_text(`Állapot: ${payload?.status || 'unknown'}`);
         this._dailyLimitDot.set_style_class_name(`codex-session-daily-limit-dot codex-session-daily-limit-${dailyLimitIndicatorLevel(dailyRemainingPercent)}`);
         const indicatorColor = dailyLimitIndicatorColor(dailyRemainingPercent);
@@ -167,14 +168,28 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
             dailyRemainingPercent,
             weeklyPercent,
             weeklyResetDate,
+            sessionResetTime: payload?.session_reset_time_local,
             displayFormat: this._settings.display_format,
             fallback: display,
         }));
         this._sessionItem.label.set_text(`Heti keret: ${weeklyPercent ?? 'n/a'}%`);
         this._resetItem.label.set_text(`Reset: ${weeklyResetDate || 'nincs'}`);
+        this._sessionResetItem.label.set_text(`5 órás reset: ${payload?.session_reset_time_local || 'nincs'}`);
         this._updatedItem.label.set_text(`Frissítve: ${payload?.last_updated ? payload.last_updated.slice(11, 16) : 'nincs'}`);
         this._sourceItem.label.set_text(`Forrás: ${payload?.source_label || 'nincs'}`);
         this._messageItem.label.set_text(`Üzenet: ${payload?.message || 'nincs'}`);
+    }
+
+    _dailyRemainingPercent(payload) {
+        const workdays = WEEKLY_WORKDAYS.includes(this._settings.weekly_workdays) ? this._settings.weekly_workdays : DEFAULT_SETTINGS.weekly_workdays;
+        const value = resolveDailyRemainingPercent({
+            sessionPercent: payload?.session_percent,
+            quotaRemainingPercent: Number(payload?.weekly_percent),
+            resetAt: payload?.weekly_reset_at,
+            lastUpdated: payload?.last_updated,
+            workdays,
+        });
+        return value === null ? null : Math.round(value);
     }
 
     _calculateWeeklyPace(payload) {

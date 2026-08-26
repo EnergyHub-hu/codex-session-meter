@@ -50,17 +50,24 @@ function rgbToHex(rgb) {
     return `#${rgb.map(component => component.toString(16).padStart(2, '0')).join('').toUpperCase()}`;
 }
 
-export function formatPanelDisplay({dailyRemainingPercent, weeklyPercent, weeklyResetDate, displayFormat, fallback}) {
+export function formatPanelDisplay({dailyRemainingPercent, weeklyPercent, weeklyResetDate, sessionResetTime, displayFormat, fallback}) {
     if (dailyRemainingPercent === null)
         return fallback;
 
     const daily = Math.round(dailyRemainingPercent);
     const weekly = weeklyPercent ?? 'n/a';
-    const reset = weeklyResetDate || 'nincs';
+    const reset = [sessionResetTime || null, weeklyResetDate || null].filter(Boolean).join(' / ') || 'nincs';
     if (displayFormat === 'verbose')
         return `Napi ${daily}% | Heti ${weekly}% | Reset ${reset}`;
 
     return `${daily}% / ${weekly}% | ${reset}`;
+}
+
+export function resolveDailyRemainingPercent({sessionPercent, quotaRemainingPercent, resetAt, lastUpdated, workdays}) {
+    if (Number.isFinite(sessionPercent))
+        return Math.max(0, Math.min(100, sessionPercent));
+
+    return calculateWeeklyPace({quotaRemainingPercent, resetAt, lastUpdated, workdays}).dailyRemainingPercent;
 }
 
 export function calculateWeeklyPace({quotaRemainingPercent, resetAt, lastUpdated, workdays}) {

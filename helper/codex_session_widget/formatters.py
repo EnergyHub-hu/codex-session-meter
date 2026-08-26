@@ -49,11 +49,19 @@ def ok_payload(
     display_format: str = DEFAULT_DISPLAY_FORMAT,
     weekly_workdays: int = 5,
     panel_icon: str = "brain",
+    session_used_percent: int | None = None,
+    session_reset_at: datetime | None = None,
 ) -> dict:
     local_reset = weekly_reset_at.astimezone()
     local_now = now.astimezone()
     used_percent = clamp_percent(weekly_used_percent)
     remaining_seconds = max(0, int((local_reset - local_now).total_seconds()))
+    local_session_reset = session_reset_at.astimezone() if session_reset_at else None
+    session_remaining_seconds = (
+        max(0, int((local_session_reset - local_now).total_seconds()))
+        if local_session_reset and session_used_percent is not None
+        else None
+    )
     return {
         "ok": True,
         "status": "ok",
@@ -68,6 +76,14 @@ def ok_payload(
         "weekly_reset_at": local_reset.isoformat(timespec="seconds"),
         "weekly_reset_date_local": local_reset.strftime("%m.%d."),
         "source_label": source_label or "Codex usage API",
+        "session_percent": remaining_percent(session_used_percent) if session_used_percent is not None else None,
+        "session_used_percent": clamp_percent(session_used_percent) if session_used_percent is not None else None,
+        "session_reset_at": local_session_reset.isoformat(timespec="seconds") if local_session_reset else None,
+        "session_reset_time_local": local_session_reset.strftime("%H:%M") if local_session_reset else None,
+        "session_remaining_seconds": session_remaining_seconds,
+        "session_remaining_human_hu": (
+            format_remaining_hu(session_remaining_seconds) if session_remaining_seconds is not None else None
+        ),
         "reset_at": local_reset.isoformat(timespec="seconds"),
         "reset_time_local": local_reset.strftime("%m.%d. %H:%M"),
         "remaining_seconds": remaining_seconds,

@@ -38,9 +38,70 @@ def test_rate_limits_payload_uses_primary_as_the_weekly_window() -> None:
     assert payload["weekly_used_percent"] == 62
     assert payload["weekly_percent"] == 38
     assert datetime.fromisoformat(payload["weekly_reset_at"]).timestamp() == 1780754400
+    assert payload["session_used_percent"] is None
+    assert payload["session_percent"] is None
+    assert payload["session_reset_at"] is None
     assert "Session" not in payload["display"]
     assert payload["source"] == "codex_app_server:account/rateLimits/read"
     assert payload["source_label"] == "Codex CLI API"
+
+
+def test_rate_limits_payload_classifies_windows_by_duration() -> None:
+    now = datetime.fromisoformat("2026-06-06T12:00:00+00:00")
+    response = {
+        "rateLimits": {
+            "primary": {
+                "usedPercent": 80,
+                "windowDurationMins": 300,
+                "resetsAt": 1780732800,
+            },
+            "secondary": {
+                "usedPercent": 30,
+                "windowDurationMins": 10080,
+                "resetsAt": 1780754400,
+            },
+        }
+    }
+
+    payload = codex_api.rate_limits_to_payload(
+        response,
+        now,
+        poll_interval_minutes=1,
+        display_format="verbose",
+        weekly_workdays=5,
+        panel_icon="brain",
+    )
+
+    assert payload["ok"] is True
+    assert payload["weekly_used_percent"] == 30
+    assert payload["weekly_percent"] == 70
+    assert datetime.fromisoformat(payload["weekly_reset_at"]).timestamp() == 1780754400
+    assert payload["session_used_percent"] == 80
+    assert payload["session_percent"] == 20
+    assert datetime.fromisoformat(payload["session_reset_at"]).timestamp() == 1780732800
+
+
+def test_rate_limits_payload_keeps_single_window_without_duration_as_weekly() -> None:
+    now = datetime.fromisoformat("2026-06-06T12:00:00+00:00")
+    response = {
+        "rateLimits": {
+            "primary": {"usedPercent": 25, "resetsAt": 1780754400},
+            "secondary": None,
+        }
+    }
+
+    payload = codex_api.rate_limits_to_payload(
+        response,
+        now,
+        poll_interval_minutes=1,
+        display_format="verbose",
+        weekly_workdays=5,
+        panel_icon="brain",
+    )
+
+    assert payload["weekly_used_percent"] == 25
+    assert payload["session_used_percent"] is None
+    assert payload["session_reset_at"] is None
 
 
 def test_read_rate_limits_sends_initialize_then_rate_limit_request(monkeypatch) -> None:
