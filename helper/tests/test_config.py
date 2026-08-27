@@ -16,7 +16,9 @@ def test_read_settings_defaults_when_missing(tmp_path, monkeypatch) -> None:
 
     assert read_settings() == {
         "poll_interval_minutes": 1,
-        "display_format": "verbose",
+        "show_session": True,
+        "show_daily": True,
+        "show_weekly": True,
         "weekly_workdays": 5,
         "panel_icon": "brain",
     }
@@ -32,22 +34,57 @@ def test_write_settings_persists_menu_options(tmp_path, monkeypatch) -> None:
 
     settings = write_settings(
         poll_interval_minutes=10,
-        display_format="compact",
         panel_icon="robot",
     )
 
     assert settings == {
         "poll_interval_minutes": 10,
-        "display_format": "compact",
+        "show_session": True,
+        "show_daily": True,
+        "show_weekly": True,
         "weekly_workdays": 5,
         "panel_icon": "robot",
     }
     assert settings_file.read_text(encoding="utf-8") == (
         "poll_interval_minutes = 10\n"
-        'display_format = "compact"\n'
+        "show_session = true\n"
+        "show_daily = true\n"
+        "show_weekly = true\n"
         "weekly_workdays = 5\n"
         'panel_icon = "robot"\n'
     )
+
+
+def test_write_settings_persists_visibility_flags(tmp_path, monkeypatch) -> None:
+    config_dir = tmp_path / "codex-session-meter"
+    config_dir.mkdir()
+    settings_file = config_dir / "settings.toml"
+
+    monkeypatch.setattr(config, "CONFIG_DIR", config_dir)
+    monkeypatch.setattr(config, "SETTINGS_FILE", settings_file)
+
+    settings = write_settings(show_session=False, show_weekly=False)
+
+    assert settings["show_session"] is False
+    assert settings["show_daily"] is True
+    assert settings["show_weekly"] is False
+    content = settings_file.read_text(encoding="utf-8")
+    assert "show_session = false" in content
+    assert "show_daily = true" in content
+    assert "show_weekly = false" in content
+
+
+def test_read_settings_rejects_invalid_visibility_values(tmp_path, monkeypatch) -> None:
+    config_dir = tmp_path / "codex-session-meter"
+    config_dir.mkdir()
+    settings_file = config_dir / "settings.toml"
+    settings_file.write_text("show_daily = 1\n", encoding="utf-8")
+
+    monkeypatch.setattr(config, "CONFIG_DIR", config_dir)
+    monkeypatch.setattr(config, "SETTINGS_FILE", settings_file)
+
+    with pytest.raises(ConfigError):
+        read_settings()
 
 
 def test_read_settings_rejects_invalid_values(tmp_path, monkeypatch) -> None:

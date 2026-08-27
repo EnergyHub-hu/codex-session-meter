@@ -5,7 +5,7 @@ import json
 import sys
 
 from . import auth
-from .config import LOG_FILE, ALLOWED_POLL_INTERVALS, ALLOWED_DISPLAY_FORMATS, ALLOWED_WEEKLY_WORKDAYS, ALLOWED_PANEL_ICONS, ConfigError, read_settings, write_settings
+from .config import LOG_FILE, ALLOWED_POLL_INTERVALS, ALLOWED_WEEKLY_WORKDAYS, ALLOWED_PANEL_ICONS, ConfigError, read_settings, write_settings
 from .fetcher import cached_status, refresh_status
 
 
@@ -33,7 +33,9 @@ def main(argv: list[str] | None = None) -> int:
 
     configure = subparsers.add_parser("configure")
     configure.add_argument("--poll-interval", type=int, choices=ALLOWED_POLL_INTERVALS)
-    configure.add_argument("--display-format", choices=tuple(sorted(ALLOWED_DISPLAY_FORMATS)))
+    configure.add_argument("--show-session", action=argparse.BooleanOptionalAction)
+    configure.add_argument("--show-daily", action=argparse.BooleanOptionalAction)
+    configure.add_argument("--show-weekly", action=argparse.BooleanOptionalAction)
     configure.add_argument("--weekly-workdays", type=int, choices=ALLOWED_WEEKLY_WORKDAYS)
     configure.add_argument("--panel-icon", choices=tuple(sorted(ALLOWED_PANEL_ICONS)))
     configure.add_argument("--json", action="store_true", help="Print updated settings as JSON")
@@ -64,7 +66,9 @@ def main(argv: list[str] | None = None) -> int:
         payload = _settings_payload(
             write_settings(
                 poll_interval_minutes=args.poll_interval,
-                display_format=args.display_format,
+                show_session=args.show_session,
+                show_daily=args.show_daily,
+                show_weekly=args.show_weekly,
                 weekly_workdays=args.weekly_workdays,
                 panel_icon=args.panel_icon,
             )

@@ -11,12 +11,13 @@ except ModuleNotFoundError:  # pragma: no cover - Python < 3.11
 
 APP_NAME = "codex-session-meter"
 DEFAULT_POLL_INTERVAL_MINUTES = 1
-DEFAULT_DISPLAY_FORMAT = "verbose"
+DEFAULT_SHOW_SESSION = True
+DEFAULT_SHOW_DAILY = True
+DEFAULT_SHOW_WEEKLY = True
 DEFAULT_WEEKLY_WORKDAYS = 5
 DEFAULT_PANEL_ICON = "brain"
 ALLOWED_POLL_INTERVALS = (1, 5, 10, 15)
 ALLOWED_WEEKLY_WORKDAYS = tuple(range(1, 8))
-ALLOWED_DISPLAY_FORMATS = frozenset({"verbose", "compact"})
 ALLOWED_PANEL_ICONS = frozenset({"none", "brain", "robot", "chip", "circuit", "atom", "terminal", "fire", "boom", "star", "sparkle"})
 class ConfigError(ValueError):
     pass
@@ -59,7 +60,9 @@ def _load_toml_config(path: Path) -> dict:
 def _default_settings() -> dict[str, object]:
     return {
         "poll_interval_minutes": DEFAULT_POLL_INTERVAL_MINUTES,
-        "display_format": DEFAULT_DISPLAY_FORMAT,
+        "show_session": DEFAULT_SHOW_SESSION,
+        "show_daily": DEFAULT_SHOW_DAILY,
+        "show_weekly": DEFAULT_SHOW_WEEKLY,
         "weekly_workdays": DEFAULT_WEEKLY_WORKDAYS,
         "panel_icon": DEFAULT_PANEL_ICON,
     }
@@ -76,14 +79,12 @@ def _validate_settings(loaded: dict) -> dict[str, object]:
             raise ConfigError("poll_interval_minutes must be one of 1, 5, 10, or 15.")
         settings["poll_interval_minutes"] = value
 
-    value = loaded.get("display_format")
-    if value is not None:
-        if not isinstance(value, str):
-            raise ConfigError("display_format must be 'verbose' or 'compact'.")
-        normalized = value.strip().lower()
-        if normalized not in ALLOWED_DISPLAY_FORMATS:
-            raise ConfigError("display_format must be 'verbose' or 'compact'.")
-        settings["display_format"] = normalized
+    for key in ("show_session", "show_daily", "show_weekly"):
+        value = loaded.get(key)
+        if value is not None:
+            if not isinstance(value, bool):
+                raise ConfigError(f"{key} must be a boolean.")
+            settings[key] = value
 
     value = loaded.get("weekly_workdays")
     if value is not None:
@@ -116,7 +117,9 @@ def read_settings() -> dict[str, object]:
 def write_settings(
     *,
     poll_interval_minutes: int | None = None,
-    display_format: str | None = None,
+    show_session: bool | None = None,
+    show_daily: bool | None = None,
+    show_weekly: bool | None = None,
     weekly_workdays: int | None = None,
     panel_icon: str | None = None,
 ) -> dict[str, object]:
@@ -130,11 +133,15 @@ def write_settings(
             raise ConfigError("poll_interval_minutes must be one of 1, 5, 10, or 15.")
         settings["poll_interval_minutes"] = poll_interval_minutes
 
-    if display_format is not None:
-        normalized = display_format.strip().lower()
-        if normalized not in ALLOWED_DISPLAY_FORMATS:
-            raise ConfigError("display_format must be 'verbose' or 'compact'.")
-        settings["display_format"] = normalized
+    for key, value in (
+        ("show_session", show_session),
+        ("show_daily", show_daily),
+        ("show_weekly", show_weekly),
+    ):
+        if value is not None:
+            if not isinstance(value, bool):
+                raise ConfigError(f"{key} must be a boolean.")
+            settings[key] = value
 
     if weekly_workdays is not None:
         if weekly_workdays not in ALLOWED_WEEKLY_WORKDAYS:
@@ -152,7 +159,9 @@ def write_settings(
         "\n".join(
             (
                 f'poll_interval_minutes = {settings["poll_interval_minutes"]}',
-                f'display_format = {json.dumps(settings["display_format"], ensure_ascii=False)}',
+                f'show_session = {json.dumps(settings["show_session"])}',
+                f'show_daily = {json.dumps(settings["show_daily"])}',
+                f'show_weekly = {json.dumps(settings["show_weekly"])}',
                 f'weekly_workdays = {settings["weekly_workdays"]}',
                 f'panel_icon = {json.dumps(settings["panel_icon"], ensure_ascii=False)}',
                 "",
