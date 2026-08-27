@@ -102,26 +102,27 @@ export function calculateWeeklyPace({quotaRemainingPercent, resetAt, lastUpdated
             quotaRemainingPercent: null,
             todayMinimumRemainingPercent: null,
             dailyRemainingPercent: null,
-            startedWorkdays: null,
+            elapsedWorkdays: null,
             workdays,
             budgetPerWorkday: null,
         };
     }
 
     const boundedQuotaRemainingPercent = Math.max(0, Math.min(100, quotaRemainingPercent));
-    const lastUpdatedDate = new Date(lastUpdatedMillis);
-    const windowStartDate = new Date(resetAtMillis - (7 * DAY_MILLIS));
-    const startedCalendarDays = Math.max(0, Math.floor((localCalendarDayMillis(lastUpdatedDate) - localCalendarDayMillis(windowStartDate)) / DAY_MILLIS) + 1);
-    const startedWorkdays = Math.max(0, Math.min(workdays, startedCalendarDays));
+    const windowStartMillis = resetAtMillis - (7 * DAY_MILLIS);
+    const windowDurationMillis = 7 * DAY_MILLIS;
+    const elapsedMillis = Math.max(0, lastUpdatedMillis - windowStartMillis);
+    const elapsedFraction = Math.min(1, elapsedMillis / windowDurationMillis);
+    const elapsedWorkdays = elapsedFraction * workdays;
     const budgetPerWorkday = 100 / workdays;
-    const todayMinimumRemainingPercent = Math.max(0, 100 - startedWorkdays * budgetPerWorkday);
+    const todayMinimumRemainingPercent = Math.max(0, 100 - elapsedWorkdays * budgetPerWorkday);
     const dailyRemainingPercent = ((boundedQuotaRemainingPercent - todayMinimumRemainingPercent) / budgetPerWorkday) * 100;
 
     return {
         quotaRemainingPercent: boundedQuotaRemainingPercent,
         todayMinimumRemainingPercent,
         dailyRemainingPercent,
-        startedWorkdays,
+        elapsedWorkdays,
         workdays,
         budgetPerWorkday,
     };

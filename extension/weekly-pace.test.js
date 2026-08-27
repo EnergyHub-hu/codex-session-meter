@@ -26,7 +26,7 @@ test('returns null when weekly pace data is incomplete', () => {
     assert.equal(resolveDailyRemainingPercent({quotaRemainingPercent: 80}), null);
 });
 
-test('treats the day after a late weekly reset as the second allocation day', () => {
+test('calculates time-proportional pace for a partially elapsed first day', () => {
     const pace = calculateWeeklyPace({
         quotaRemainingPercent: 85,
         resetAt: '2026-07-20T18:00:00+02:00',
@@ -34,45 +34,114 @@ test('treats the day after a late weekly reset as the second allocation day', ()
         workdays: 5,
     });
 
-    assert.equal(pace.startedWorkdays, 2);
-    assert.equal(pace.todayMinimumRemainingPercent, 60);
-    assert.equal(pace.dailyRemainingPercent, 125);
+    assert.equal(pace.elapsedWorkdays > 0, true);
+    assert.equal(pace.elapsedWorkdays < 1, true);
+    assert.equal(Math.round(pace.todayMinimumRemainingPercent), 91);
+    assert.equal(Math.round(pace.dailyRemainingPercent), -30);
 });
 
-test('shows five percent of the daily quota after using nineteen of the first twenty weekly points', () => {
+test('shows daily quota surplus when most of the week has elapsed but quota remains', () => {
     const pace = calculateWeeklyPace({
         quotaRemainingPercent: 81,
         resetAt: '2026-07-20T18:00:00+02:00',
-        lastUpdated: '2026-07-13T09:00:00+02:00',
+        lastUpdated: '2026-07-19T09:00:00+02:00',
         workdays: 5,
     });
 
-    assert.equal(pace.startedWorkdays, 1);
-    assert.equal(pace.dailyRemainingPercent, 5);
+    assert.equal(Math.round(pace.elapsedWorkdays), 4);
+    assert.equal(Math.round(pace.dailyRemainingPercent), 307);
 });
 
-test('reduces the normalized daily limit by four points across four workdays', () => {
+test('calculates time-proportional pace across four workdays', () => {
     const pace = calculateWeeklyPace({
         quotaRemainingPercent: 99,
         resetAt: '2026-07-20T18:00:00+02:00',
-        lastUpdated: '2026-07-13T09:00:00+02:00',
+        lastUpdated: '2026-07-19T09:00:00+02:00',
         workdays: 4,
     });
 
     assert.equal(pace.budgetPerWorkday, 25);
-    assert.equal(pace.dailyRemainingPercent, 96);
+    assert.equal(Math.round(pace.elapsedWorkdays), 3);
+    assert.equal(Math.round(pace.dailyRemainingPercent), 317);
 });
 
-test('reduces the normalized daily limit by three points across three workdays', () => {
+test('calculates time-proportional pace across three workdays', () => {
     const pace = calculateWeeklyPace({
         quotaRemainingPercent: 99,
         resetAt: '2026-07-20T18:00:00+02:00',
-        lastUpdated: '2026-07-13T09:00:00+02:00',
+        lastUpdated: '2026-07-19T09:00:00+02:00',
         workdays: 3,
     });
 
-    assert.equal(pace.budgetPerWorkday, 100 / 3);
-    assert.equal(Math.round(pace.dailyRemainingPercent), 97);
+    assert.equal(Math.round(pace.budgetPerWorkday), 33);
+    assert.equal(Math.round(pace.elapsedWorkdays), 2);
+    assert.equal(Math.round(pace.dailyRemainingPercent), 238);
+});
+
+test('treats the exact window start as zero elapsed time', () => {
+    const pace = calculateWeeklyPace({
+        quotaRemainingPercent: 100,
+        resetAt: '2026-07-20T18:00:00+02:00',
+        lastUpdated: '2026-07-13T18:00:00+02:00',
+        workdays: 5,
+    });
+
+    assert.equal(pace.elapsedWorkdays, 0);
+    assert.equal(pace.todayMinimumRemainingPercent, 100);
+    assert.equal(pace.dailyRemainingPercent, 0);
+});
+
+test('treats the exact reset time as fully elapsed', () => {
+    const pace = calculateWeeklyPace({
+        quotaRemainingPercent: 30,
+        resetAt: '2026-07-20T18:00:00+02:00',
+        lastUpdated: '2026-07-20T18:00:00+02:00',
+        workdays: 5,
+    });
+
+    assert.equal(pace.elapsedWorkdays, 5);
+    assert.equal(pace.todayMinimumRemainingPercent, 0);
+    assert.equal(pace.dailyRemainingPercent, 150);
+});
+
+test('handles a partial first day when the window started hours ago', () => {
+    const pace = calculateWeeklyPace({
+        quotaRemainingPercent: 95,
+        resetAt: '2026-07-20T18:00:00+02:00',
+        lastUpdated: '2026-07-14T16:52:00+02:00',
+        workdays: 5,
+    });
+
+    assert.equal(pace.elapsedWorkdays > 0, true);
+    assert.equal(pace.elapsedWorkdays < 1, true);
+    assert.equal(pace.todayMinimumRemainingPercent > 80, true);
+    assert.equal(pace.dailyRemainingPercent > 0, true);
+});
+
+test('clamps elapsed to window start when lastUpdated is before the window', () => {
+    const pace = calculateWeeklyPace({
+        quotaRemainingPercent: 100,
+        resetAt: '2026-07-20T18:00:00+02:00',
+        lastUpdated: '2026-07-10T09:00:00+02:00',
+        workdays: 5,
+    });
+
+    assert.equal(pace.elapsedWorkdays, 0);
+    assert.equal(pace.todayMinimumRemainingPercent, 100);
+    assert.equal(pace.dailyRemainingPercent, 0);
+});
+
+test('clamps elapsed to window end when lastUpdated is after the reset', () => {
+    const pace = calculateWeeklyPace({
+        quotaRemainingPercent: 50,
+        resetAt: '2026-07-20T18:00:00+02:00',
+        lastUpdated: '2026-07-25T09:00:00+02:00',
+        workdays: 5,
+    });
+
+    assert.equal(pace.elapsedWorkdays, 5);
+    assert.equal(pace.todayMinimumRemainingPercent, 0);
+    assert.equal(pace.dailyRemainingPercent, 250);
 });
 
 test('maps five-day daily quota drops to proportional indicator steps', () => {
