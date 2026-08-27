@@ -102,15 +102,13 @@ test('normalizes daily quota drops for four and three workdays', () => {
     assert.equal(dailyLimitIndicatorLevel(97), '97');
 });
 
-test('colors the daily indicator proportionally from red to green', () => {
-    assert.equal(limitIndicatorColor(0), '#D1495B');
-    assert.equal(limitIndicatorColor(20), '#EE964B');
-    assert.equal(limitIndicatorColor(40), '#F4D35E');
-    assert.equal(limitIndicatorColor(55), '#99D98C');
-    assert.equal(limitIndicatorColor(70), '#52B69A');
-    assert.equal(limitIndicatorColor(85), '#34A0A4');
-    assert.equal(limitIndicatorColor(100), '#168AAD');
-    assert.equal(limitIndicatorColor(50), '#B7D77D');
+test('colors the limit indicator on the warm scale from deep red to green', () => {
+    assert.equal(limitIndicatorColor(0), '#B91C1C');
+    assert.equal(limitIndicatorColor(25), '#EA580C');
+    assert.equal(limitIndicatorColor(50), '#FACC15');
+    assert.equal(limitIndicatorColor(75), '#A3E635');
+    assert.equal(limitIndicatorColor(100), '#22C55E');
+    assert.equal(limitIndicatorColor(60), '#D7D622');
     assert.equal(limitIndicatorColor(null), null);
 });
 

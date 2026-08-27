@@ -1,12 +1,10 @@
 const DAY_MILLIS = 24 * 60 * 60 * 1000;
-const DAILY_LIMIT_COLOR_STOPS = [
-    [0, '#D1495B'],
-    [20, '#EE964B'],
-    [40, '#F4D35E'],
-    [55, '#99D98C'],
-    [70, '#52B69A'],
-    [85, '#34A0A4'],
-    [100, '#168AAD'],
+const LIMIT_COLOR_STOPS = [
+    [0, '#B91C1C'],
+    [25, '#EA580C'],
+    [50, '#FACC15'],
+    [75, '#A3E635'],
+    [100, '#22C55E'],
 ];
 
 function localCalendarDayMillis(date) {
@@ -30,9 +28,9 @@ export function limitIndicatorColor(remainingPercent) {
         return null;
 
     const boundedPercent = Math.max(0, Math.min(100, remainingPercent));
-    for (let index = 1; index < DAILY_LIMIT_COLOR_STOPS.length; index++) {
-        const [upperPercent, upperColor] = DAILY_LIMIT_COLOR_STOPS[index];
-        const [lowerPercent, lowerColor] = DAILY_LIMIT_COLOR_STOPS[index - 1];
+    for (let index = 1; index < LIMIT_COLOR_STOPS.length; index++) {
+        const [upperPercent, upperColor] = LIMIT_COLOR_STOPS[index];
+        const [lowerPercent, lowerColor] = LIMIT_COLOR_STOPS[index - 1];
         if (boundedPercent > upperPercent)
             continue;
 
@@ -43,7 +41,7 @@ export function limitIndicatorColor(remainingPercent) {
         return rgbToHex(rgb);
     }
 
-    return DAILY_LIMIT_COLOR_STOPS[DAILY_LIMIT_COLOR_STOPS.length - 1][1];
+    return LIMIT_COLOR_STOPS[LIMIT_COLOR_STOPS.length - 1][1];
 }
 
 export function resolveLimitIndicatorPercents({sessionPercent, weeklyPercent}) {

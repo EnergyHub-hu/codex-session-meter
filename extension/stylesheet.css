@@ -19,15 +19,15 @@
 }
 
 .codex-session-daily-limit-over { background-color: #22c55e; }
-.codex-session-daily-limit-100 { background-color: #84cc16; }
-.codex-session-daily-limit-90 { background-color: #a3c91c; }
-.codex-session-daily-limit-80 { background-color: #c5bf1d; }
-.codex-session-daily-limit-70 { background-color: #d8aa1d; }
-.codex-session-daily-limit-60 { background-color: #e6961f; }
-.codex-session-daily-limit-50 { background-color: #ec7f24; }
-.codex-session-daily-limit-40 { background-color: #ee6730; }
-.codex-session-daily-limit-30 { background-color: #ed4f3b; }
-.codex-session-daily-limit-20 { background-color: #e93843; }
-.codex-session-daily-limit-10 { background-color: #dc2626; }
+.codex-session-daily-limit-100 { background-color: #22c55e; }
+.codex-session-daily-limit-90 { background-color: #56d24e; }
+.codex-session-daily-limit-80 { background-color: #89df3d; }
+.codex-session-daily-limit-70 { background-color: #b4e12f; }
+.codex-session-daily-limit-60 { background-color: #d7d622; }
+.codex-session-daily-limit-50 { background-color: #facc15; }
+.codex-session-daily-limit-40 { background-color: #f49e11; }
+.codex-session-daily-limit-30 { background-color: #ed6f0e; }
+.codex-session-daily-limit-20 { background-color: #e04c0f; }
+.codex-session-daily-limit-10 { background-color: #cd3416; }
 .codex-session-daily-limit-0 { background-color: #b91c1c; }
 .codex-session-daily-limit-unknown { background-color: #64748b; }
