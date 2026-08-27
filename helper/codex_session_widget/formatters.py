@@ -47,6 +47,7 @@ def ok_payload(
     panel_icon: str = "brain",
     session_used_percent: int | None = None,
     session_reset_at: datetime | None = None,
+    session_window_mins: int | None = None,
 ) -> dict:
     local_reset = weekly_reset_at.astimezone()
     local_now = now.astimezone()
@@ -58,6 +59,9 @@ def ok_payload(
         if local_session_reset and session_used_percent is not None
         else None
     )
+    if session_window_mins is None and session_remaining_seconds is not None and session_used_percent is not None:
+        used_ratio = max(0.001, session_used_percent / 100)
+        session_window_mins = max(1, int(session_remaining_seconds / 60 / (1 - used_ratio)))
     return {
         "ok": True,
         "status": "ok",
@@ -79,6 +83,7 @@ def ok_payload(
         "session_remaining_human_hu": (
             format_remaining_hu(session_remaining_seconds) if session_remaining_seconds is not None else None
         ),
+        "session_window_mins": session_window_mins,
         "reset_at": local_reset.isoformat(timespec="seconds"),
         "reset_time_local": local_reset.strftime("%m.%d. %H:%M"),
         "remaining_seconds": remaining_seconds,

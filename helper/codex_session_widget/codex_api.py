@@ -237,7 +237,7 @@ def rate_limits_to_payload(
     if weekly_used_percent is None or weekly_reset_at is None:
         raise CodexApiUnavailable("Codex rate limit response is missing weekly usage data.")
 
-    session_used_percent, session_reset_at, _ = (
+    session_used_percent, session_reset_at, session_window_mins = (
         _window_values(session_window, now) if session_window is not None else (None, None, None)
     )
     return ok_payload(
@@ -254,4 +254,5 @@ def rate_limits_to_payload(
         panel_icon=panel_icon,
         session_used_percent=session_used_percent,
         session_reset_at=session_reset_at,
+        session_window_mins=session_window_mins,
     )

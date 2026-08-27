@@ -9,7 +9,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
-import {calculateWeeklyPace, compactPanelComponents, dailyLimitIndicatorLevel, limitIndicatorColor, resolveDailyRemainingPercent, resolveLimitIndicatorPercents} from './weekly-pace.js';
+import {calculateWeeklyPace, calculateSessionPace, compactPanelComponents, dailyLimitIndicatorLevel, limitIndicatorColor, resolveDailyRemainingPercent, resolveLimitIndicatorPercents} from './weekly-pace.js';
 
 const DEFAULT_SETTINGS = {
     poll_interval_minutes: 1,
@@ -218,8 +218,14 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
             sessionPercent: payload?.session_percent,
             weeklyPercent,
         });
+        const sessionPace = calculateSessionPace({
+            sessionPercent: payload?.session_percent,
+            sessionResetAt: payload?.session_reset_at,
+            lastUpdated: payload?.last_updated,
+            sessionWindowMins: payload?.session_window_mins,
+        });
         this._statusItem.label.set_text(`Állapot: ${payload?.status || 'unknown'}`);
-        this._applyLimitDot(this._sessionLimitDot, indicatorPercents.session);
+        this._applyLimitDot(this._sessionLimitDot, sessionPace);
         this._applyLimitDot(this._dailyLimitDot, dailyRemainingPercent);
         this._panelComponents = compactPanelComponents({
             sessionPercent: indicatorPercents.session,
@@ -241,7 +247,6 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
     _dailyRemainingPercent(payload) {
         const workdays = WEEKLY_WORKDAYS.includes(this._settings.weekly_workdays) ? this._settings.weekly_workdays : DEFAULT_SETTINGS.weekly_workdays;
         const value = resolveDailyRemainingPercent({
-            sessionPercent: payload?.session_percent,
             quotaRemainingPercent: Number(payload?.weekly_percent),
             resetAt: payload?.weekly_reset_at,
             lastUpdated: payload?.last_updated,

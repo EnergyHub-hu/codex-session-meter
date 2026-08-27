@@ -1,28 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {calculateWeeklyPace, compactPanelComponents, dailyLimitIndicatorLevel, limitIndicatorColor, resolveDailyRemainingPercent, resolveLimitIndicatorPercents} from './weekly-pace.js';
+import {calculateWeeklyPace, calculateSessionPace, compactPanelComponents, dailyLimitIndicatorLevel, limitIndicatorColor, resolveDailyRemainingPercent, resolveLimitIndicatorPercents} from './weekly-pace.js';
 
-test('prefers the real five hour session percent when the payload provides one', () => {
+test('calculates daily remaining from weekly pace only', () => {
     const value = resolveDailyRemainingPercent({
-        sessionPercent: 42,
-        quotaRemainingPercent: 85,
-        resetAt: '2026-07-20T18:00:00+02:00',
-        lastUpdated: '2026-07-14T09:00:00+02:00',
-        workdays: 5,
-    });
-
-    assert.equal(value, 42);
-});
-
-test('clamps the real five hour session percent into the zero to hundred range', () => {
-    assert.equal(resolveDailyRemainingPercent({sessionPercent: 130}), 100);
-    assert.equal(resolveDailyRemainingPercent({sessionPercent: -5}), 0);
-});
-
-test('falls back to the weekly pace estimate without a real five hour window', () => {
-    const value = resolveDailyRemainingPercent({
-        sessionPercent: null,
         quotaRemainingPercent: 85,
         resetAt: '2026-07-20T18:00:00+02:00',
         lastUpdated: '2026-07-14T09:00:00+02:00',
@@ -37,6 +19,11 @@ test('falls back to the weekly pace estimate without a real five hour window', (
     }).dailyRemainingPercent;
 
     assert.equal(value, expected);
+});
+
+test('returns null when weekly pace data is incomplete', () => {
+    assert.equal(resolveDailyRemainingPercent({}), null);
+    assert.equal(resolveDailyRemainingPercent({quotaRemainingPercent: 80}), null);
 });
 
 test('treats the day after a late weekly reset as the second allocation day', () => {
@@ -172,4 +159,32 @@ test('keeps the session label without a five hour reset time', () => {
 
     assert.equal(components.session, '42%');
     assert.equal(components.weekly, '60% (09.01.)');
+});
+
+test('calculates session pace as remaining minus elapsed time', () => {
+    const pace = calculateSessionPace({
+        sessionPercent: 82,
+        sessionResetAt: '2026-08-27T14:31:00+02:00',
+        lastUpdated: '2026-08-27T11:29:00+02:00',
+        sessionWindowMins: 300,
+    });
+
+    assert.equal(Math.round(pace), 43);
+});
+
+test('returns negative pace when session is overused relative to time', () => {
+    const pace = calculateSessionPace({
+        sessionPercent: 30,
+        sessionResetAt: '2026-08-27T14:31:00+02:00',
+        lastUpdated: '2026-08-27T12:31:00+02:00',
+        sessionWindowMins: 300,
+    });
+
+    assert.equal(pace, -30);
+});
+
+test('returns null for missing session pace data', () => {
+    assert.equal(calculateSessionPace({}), null);
+    assert.equal(calculateSessionPace({sessionPercent: 80}), null);
+    assert.equal(calculateSessionPace({sessionWindowMins: 300}), null);
 });

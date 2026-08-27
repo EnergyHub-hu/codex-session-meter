@@ -52,6 +52,23 @@ export function resolveLimitIndicatorPercents({sessionPercent, weeklyPercent}) {
     };
 }
 
+export function calculateSessionPace({sessionPercent, sessionResetAt, lastUpdated, sessionWindowMins}) {
+    if (!Number.isFinite(sessionPercent) || !Number.isFinite(sessionWindowMins) || sessionWindowMins <= 0)
+        return null;
+
+    const resetAtMillis = Date.parse(sessionResetAt || '');
+    const lastUpdatedMillis = Date.parse(lastUpdated || '');
+    if (!Number.isFinite(resetAtMillis) || !Number.isFinite(lastUpdatedMillis))
+        return null;
+
+    const sessionTotalMillis = sessionWindowMins * 60 * 1000;
+    const sessionStartMillis = resetAtMillis - sessionTotalMillis;
+    const elapsedMillis = lastUpdatedMillis - sessionStartMillis;
+    const timeElapsedPercent = Math.max(0, Math.min(100, (elapsedMillis / sessionTotalMillis) * 100));
+
+    return Math.max(-100, Math.min(100, sessionPercent - timeElapsedPercent));
+}
+
 function hexToRgb(hex) {
     return [1, 3, 5].map(index => Number.parseInt(hex.slice(index, index + 2), 16));
 }
@@ -71,10 +88,7 @@ export function compactPanelComponents({sessionPercent, sessionResetTime, dailyR
     };
 }
 
-export function resolveDailyRemainingPercent({sessionPercent, quotaRemainingPercent, resetAt, lastUpdated, workdays}) {
-    if (Number.isFinite(sessionPercent))
-        return Math.max(0, Math.min(100, sessionPercent));
-
+export function resolveDailyRemainingPercent({quotaRemainingPercent, resetAt, lastUpdated, workdays}) {
     return calculateWeeklyPace({quotaRemainingPercent, resetAt, lastUpdated, workdays}).dailyRemainingPercent;
 }
 
