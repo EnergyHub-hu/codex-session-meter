@@ -6,6 +6,19 @@ const LIMIT_COLOR_STOPS = [
     [75, '#A3E635'],
     [100, '#22C55E'],
 ];
+const PACE_COLOR_STOPS = [
+    [0, '#991B1B'],
+    [17, '#DC2626'],
+    [33, '#F97316'],
+    [50, '#FACC15'],
+    [67, '#84CC16'],
+    [83, '#22C55E'],
+    [100, '#15803D'],
+];
+const DAILY_PACE_MIN = -100;
+const DAILY_PACE_MAX = 200;
+const SESSION_PACE_MIN = -100;
+const SESSION_PACE_MAX = 100;
 
 function localCalendarDayMillis(date) {
     return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
@@ -42,6 +55,41 @@ export function limitIndicatorColor(remainingPercent) {
     }
 
     return LIMIT_COLOR_STOPS[LIMIT_COLOR_STOPS.length - 1][1];
+}
+
+export function normalizePace(pace, min, max) {
+    if (!Number.isFinite(pace))
+        return null;
+    const clamped = Math.max(min, Math.min(max, pace));
+    return ((clamped - min) / (max - min)) * 100;
+}
+
+export function paceColor(pace, min, max) {
+    const normalized = normalizePace(pace, min, max);
+    if (normalized === null)
+        return null;
+    for (let index = 1; index < PACE_COLOR_STOPS.length; index++) {
+        const [upperPercent, upperColor] = PACE_COLOR_STOPS[index];
+        const [lowerPercent, lowerColor] = PACE_COLOR_STOPS[index - 1];
+        if (normalized > upperPercent)
+            continue;
+
+        const ratio = (normalized - lowerPercent) / (upperPercent - lowerPercent);
+        const lowerRgb = hexToRgb(lowerColor);
+        const upperRgb = hexToRgb(upperColor);
+        const rgb = lowerRgb.map((component, componentIndex) => Math.round(component + (upperRgb[componentIndex] - component) * ratio));
+        return rgbToHex(rgb);
+    }
+
+    return PACE_COLOR_STOPS[PACE_COLOR_STOPS.length - 1][1];
+}
+
+export function dailyPaceColor(pace) {
+    return paceColor(pace, DAILY_PACE_MIN, DAILY_PACE_MAX);
+}
+
+export function sessionPaceColor(pace) {
+    return paceColor(pace, SESSION_PACE_MIN, SESSION_PACE_MAX);
 }
 
 export function resolveLimitIndicatorPercents({sessionPercent, weeklyPercent}) {

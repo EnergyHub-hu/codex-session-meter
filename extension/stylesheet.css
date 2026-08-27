@@ -6,6 +6,11 @@
   padding: 0 6px;
 }
 
+.codex-session-separator {
+  color: #888;
+  padding: 0 2px;
+}
+
 .codex-session-icon {
   margin-top: 1px;
 }

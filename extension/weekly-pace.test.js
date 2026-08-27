@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {calculateWeeklyPace, calculateSessionPace, compactPanelComponents, dailyLimitIndicatorLevel, limitIndicatorColor, resolveDailyRemainingPercent, resolveLimitIndicatorPercents} from './weekly-pace.js';
+import {calculateWeeklyPace, calculateSessionPace, compactPanelComponents, dailyLimitIndicatorLevel, limitIndicatorColor, resolveDailyRemainingPercent, resolveLimitIndicatorPercents, normalizePace, paceColor, dailyPaceColor, sessionPaceColor} from './weekly-pace.js';
 
 test('calculates daily remaining from weekly pace only', () => {
     const value = resolveDailyRemainingPercent({
@@ -256,4 +256,49 @@ test('returns null for missing session pace data', () => {
     assert.equal(calculateSessionPace({}), null);
     assert.equal(calculateSessionPace({sessionPercent: 80}), null);
     assert.equal(calculateSessionPace({sessionWindowMins: 300}), null);
+});
+
+test('normalizes pace to 0-100 range', () => {
+    assert.equal(normalizePace(-100, -100, 200), 0);
+    assert.equal(normalizePace(200, -100, 200), 100);
+    assert.ok(Math.abs(normalizePace(0, -100, 200) - 100 / 3) < 1e-10);
+    assert.equal(normalizePace(50, -100, 200), 50);
+    assert.equal(normalizePace(null, -100, 200), null);
+    assert.equal(normalizePace(NaN, -100, 200), null);
+});
+
+test('clamps pace values to bounds', () => {
+    assert.equal(normalizePace(-200, -100, 200), 0);
+    assert.equal(normalizePace(300, -100, 200), 100);
+});
+
+test('interpolates pace color between stops', () => {
+    const color0 = paceColor(-100, -100, 200);
+    const color50 = paceColor(50, -100, 200);
+    const color200 = paceColor(200, -100, 200);
+    assert.ok(color0);
+    assert.ok(color50);
+    assert.ok(color200);
+    assert.notEqual(color0, color200);
+});
+
+test('returns null pace color for invalid input', () => {
+    assert.equal(paceColor(null, -100, 200), null);
+    assert.equal(paceColor(NaN, -100, 200), null);
+});
+
+test('dailyPaceColor uses daily bounds', () => {
+    const red = dailyPaceColor(-100);
+    const green = dailyPaceColor(200);
+    assert.ok(red);
+    assert.ok(green);
+    assert.notEqual(red, green);
+});
+
+test('sessionPaceColor uses session bounds', () => {
+    const red = sessionPaceColor(-100);
+    const green = sessionPaceColor(100);
+    assert.ok(red);
+    assert.ok(green);
+    assert.notEqual(red, green);
 });
