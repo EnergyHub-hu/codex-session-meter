@@ -21,6 +21,7 @@ def test_read_settings_defaults_when_missing(tmp_path, monkeypatch) -> None:
         "show_weekly": True,
         "weekly_workdays": 5,
         "panel_icon": "brain",
+        "display_mode": "pace",
     }
 
 
@@ -44,6 +45,7 @@ def test_write_settings_persists_menu_options(tmp_path, monkeypatch) -> None:
         "show_weekly": True,
         "weekly_workdays": 5,
         "panel_icon": "robot",
+        "display_mode": "pace",
     }
     assert settings_file.read_text(encoding="utf-8") == (
         "poll_interval_minutes = 10\n"
@@ -52,6 +54,7 @@ def test_write_settings_persists_menu_options(tmp_path, monkeypatch) -> None:
         "show_weekly = true\n"
         "weekly_workdays = 5\n"
         'panel_icon = "robot"\n'
+        'display_mode = "pace"\n'
     )
 
 

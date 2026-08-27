@@ -227,6 +227,7 @@ def rate_limits_to_payload(
     show_weekly: bool,
     weekly_workdays: int,
     panel_icon: str,
+    display_mode: str = "pace",
 ) -> dict[str, Any]:
     rate_limits = response.get("rateLimits")
     if not isinstance(rate_limits, dict):
@@ -255,4 +256,5 @@ def rate_limits_to_payload(
         session_used_percent=session_used_percent,
         session_reset_at=session_reset_at,
         session_window_mins=session_window_mins,
+        display_mode=display_mode,
     )

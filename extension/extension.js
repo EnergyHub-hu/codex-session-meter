@@ -9,7 +9,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
-import {calculateWeeklyPace, calculateSessionPace, compactPanelComponents, dailyLimitIndicatorLevel, limitIndicatorColor, resolveDailyRemainingPercent, resolveLimitIndicatorPercents} from './weekly-pace.js';
+import {calculateWeeklyPace, calculateSessionPace, compactPanelComponents, dailyLimitIndicatorLevel, limitIndicatorColor, resolveDailyRemainingPercent} from './weekly-pace.js';
 
 const DEFAULT_SETTINGS = {
     poll_interval_minutes: 1,
@@ -18,9 +18,12 @@ const DEFAULT_SETTINGS = {
     show_weekly: true,
     weekly_workdays: 5,
     panel_icon: 'brain',
+    display_mode: 'pace',
 };
 const POLL_INTERVALS = [1, 5, 10, 15];
 const WEEKLY_WORKDAYS = [1, 2, 3, 4, 5, 6, 7];
+const DISPLAY_MODES = ['pace', 'absolute'];
+const DISPLAY_MODE_LABELS = {pace: 'Ütem', absolute: 'Abszolút'};
 const PANEL_COMPONENTS = [
     {key: 'session', setting: 'show_session', label: '5 órás limit', flag: 'show-session'},
     {key: 'daily', setting: 'show_daily', label: 'Napi limit', flag: 'show-daily'},
@@ -58,6 +61,7 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
         this._visibilityItems = new Map();
         this._weeklyWorkdayItems = new Map();
         this._panelIconItems = new Map();
+        this._displayModeItems = new Map();
         this._panelComponents = null;
         this._fallbackDisplay = 'Codex: töltés…';
 
@@ -153,6 +157,7 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
         this._addVisibilityItems();
         this._addWeeklyWorkdayItems();
         this._addIconItems();
+        this._addDisplayModeItems();
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
         const refreshItem = new PopupMenu.PopupMenuItem('Refresh now');
@@ -214,23 +219,21 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
         const weeklyResetDate = payload?.weekly_reset_date_local;
         const display = payload?.display || 'Codex: ismeretlen hiba';
         const dailyRemainingPercent = this._dailyRemainingPercent(payload);
-        const indicatorPercents = resolveLimitIndicatorPercents({
-            sessionPercent: payload?.session_percent,
-            weeklyPercent,
-        });
         const sessionPace = calculateSessionPace({
             sessionPercent: payload?.session_percent,
             sessionResetAt: payload?.session_reset_at,
             lastUpdated: payload?.last_updated,
             sessionWindowMins: payload?.session_window_mins,
         });
+        const isPace = this._settings.display_mode === 'pace';
+        const sessionDisplayPercent = isPace ? sessionPace : payload?.session_used_percent;
         this._statusItem.label.set_text(`Állapot: ${payload?.status || 'unknown'}`);
-        this._applyLimitDot(this._sessionLimitDot, sessionPace);
+        this._applyLimitDot(this._sessionLimitDot, sessionDisplayPercent);
         this._applyLimitDot(this._dailyLimitDot, dailyRemainingPercent);
         this._panelComponents = compactPanelComponents({
-            sessionPercent: indicatorPercents.session,
-            sessionResetTime: payload?.session_reset_time_local,
-            dailyRemainingPercent,
+            sessionPercent: sessionDisplayPercent,
+            sessionResetTime: isPace ? payload?.session_reset_time_local : null,
+            dailyRemainingPercent: isPace ? dailyRemainingPercent : null,
             weeklyPercent,
             weeklyResetDate,
         });
@@ -263,10 +266,13 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
 
     _updatePanelComponents() {
         const components = this._panelComponents || {};
+        const isPace = this._settings.display_mode === 'pace';
         let enabledCount = 0;
         let dataCount = 0;
         for (const component of PANEL_COMPONENTS) {
             if (!this._settings[component.setting])
+                continue;
+            if (component.key === 'daily' && !isPace)
                 continue;
             enabledCount++;
             if (components[component.key])
@@ -276,7 +282,7 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
         const showFallback = enabledCount > 0 && dataCount === 0;
         for (const component of PANEL_COMPONENTS) {
             const widget = this._componentWidgets.get(component.key);
-            const visible = Boolean(this._settings[component.setting]) && !showFallback;
+            const visible = Boolean(this._settings[component.setting]) && !showFallback && (component.key !== 'daily' || isPace);
             widget.group.visible = visible;
             if (visible)
                 widget.label.set_text(components[component.key] || '–');
@@ -309,9 +315,10 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
             show_weekly: typeof settings.show_weekly === 'boolean' ? settings.show_weekly : this._settings.show_weekly,
             weekly_workdays: WEEKLY_WORKDAYS.includes(settings.weekly_workdays) ? settings.weekly_workdays : this._settings.weekly_workdays,
             panel_icon: Object.prototype.hasOwnProperty.call(ICON_OPTIONS, settings.panel_icon) ? settings.panel_icon : this._settings.panel_icon,
+            display_mode: DISPLAY_MODES.includes(settings.display_mode) ? settings.display_mode : this._settings.display_mode,
         };
 
-        const changed = next.poll_interval_minutes !== this._settings.poll_interval_minutes || next.show_session !== this._settings.show_session || next.show_daily !== this._settings.show_daily || next.show_weekly !== this._settings.show_weekly || next.weekly_workdays !== this._settings.weekly_workdays || next.panel_icon !== this._settings.panel_icon;
+        const changed = next.poll_interval_minutes !== this._settings.poll_interval_minutes || next.show_session !== this._settings.show_session || next.show_daily !== this._settings.show_daily || next.show_weekly !== this._settings.show_weekly || next.weekly_workdays !== this._settings.weekly_workdays || next.panel_icon !== this._settings.panel_icon || next.display_mode !== this._settings.display_mode;
         this._settings = next;
         this._refreshSeconds = this._settings.poll_interval_minutes * 60;
         this._applyPanelIcon();
@@ -377,6 +384,17 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
         this.menu.addMenuItem(panelIconMenu);
     }
 
+    _addDisplayModeItems() {
+        const displayModeMenu = new PopupMenu.PopupSubMenuMenuItem('Megjelenítés módja');
+        for (const mode of DISPLAY_MODES) {
+            const item = new PopupMenu.PopupMenuItem(DISPLAY_MODE_LABELS[mode]);
+            item.connect('activate', () => this._setDisplayMode(mode));
+            displayModeMenu.menu.addMenuItem(item);
+            this._displayModeItems.set(mode, item);
+        }
+        this.menu.addMenuItem(displayModeMenu);
+    }
+
     _syncMenuState() {
         for (const [minutes, item] of this._pollIntervalItems.entries()) {
             item.setOrnament?.(minutes === this._settings.poll_interval_minutes ? PopupMenu.Ornament.CHECK : PopupMenu.Ornament.NONE);
@@ -393,6 +411,10 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
 
         for (const [iconName, item] of this._panelIconItems.entries()) {
             item.setOrnament?.(iconName === this._settings.panel_icon ? PopupMenu.Ornament.CHECK : PopupMenu.Ornament.NONE);
+        }
+
+        for (const [mode, item] of this._displayModeItems.entries()) {
+            item.setOrnament?.(mode === this._settings.display_mode ? PopupMenu.Ornament.CHECK : PopupMenu.Ornament.NONE);
         }
 
     }
@@ -420,6 +442,13 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
 
     _setPanelIcon(iconName) {
         this._runJson([HELPER, 'configure', '--panel-icon', iconName, '--json'], payload => {
+            this._applySettings(payload);
+            this.refresh();
+        });
+    }
+
+    _setDisplayMode(mode) {
+        this._runJson([HELPER, 'configure', '--display-mode', mode, '--json'], payload => {
             this._applySettings(payload);
             this.refresh();
         });

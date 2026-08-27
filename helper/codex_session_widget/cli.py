@@ -5,7 +5,7 @@ import json
 import sys
 
 from . import auth
-from .config import LOG_FILE, ALLOWED_POLL_INTERVALS, ALLOWED_WEEKLY_WORKDAYS, ALLOWED_PANEL_ICONS, ConfigError, read_settings, write_settings
+from .config import LOG_FILE, ALLOWED_POLL_INTERVALS, ALLOWED_WEEKLY_WORKDAYS, ALLOWED_PANEL_ICONS, ALLOWED_DISPLAY_MODES, ConfigError, read_settings, write_settings
 from .fetcher import cached_status, refresh_status
 
 
@@ -38,6 +38,7 @@ def main(argv: list[str] | None = None) -> int:
     configure.add_argument("--show-weekly", action=argparse.BooleanOptionalAction)
     configure.add_argument("--weekly-workdays", type=int, choices=ALLOWED_WEEKLY_WORKDAYS)
     configure.add_argument("--panel-icon", choices=tuple(sorted(ALLOWED_PANEL_ICONS)))
+    configure.add_argument("--display-mode", choices=tuple(sorted(ALLOWED_DISPLAY_MODES)))
     configure.add_argument("--json", action="store_true", help="Print updated settings as JSON")
 
     subparsers.add_parser("login")
@@ -71,6 +72,7 @@ def main(argv: list[str] | None = None) -> int:
                 show_weekly=args.show_weekly,
                 weekly_workdays=args.weekly_workdays,
                 panel_icon=args.panel_icon,
+                display_mode=args.display_mode,
             )
         )
         print_json(payload) if args.json else print("Settings updated")

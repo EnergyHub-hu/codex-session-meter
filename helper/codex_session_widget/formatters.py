@@ -48,6 +48,7 @@ def ok_payload(
     session_used_percent: int | None = None,
     session_reset_at: datetime | None = None,
     session_window_mins: int | None = None,
+    display_mode: str = "pace",
 ) -> dict:
     local_reset = weekly_reset_at.astimezone()
     local_now = now.astimezone()
@@ -97,6 +98,7 @@ def ok_payload(
             "show_weekly": show_weekly,
             "weekly_workdays": weekly_workdays,
             "panel_icon": panel_icon,
+            "display_mode": display_mode,
         },
     }
 
@@ -113,6 +115,7 @@ def error_payload(
     show_weekly: bool = True,
     weekly_workdays: int = 5,
     panel_icon: str = "brain",
+    display_mode: str = "pace",
 ) -> dict:
     payload = {
         "ok": False,
@@ -126,6 +129,7 @@ def error_payload(
             "show_weekly": show_weekly,
             "weekly_workdays": weekly_workdays,
             "panel_icon": panel_icon,
+            "display_mode": display_mode,
         },
     }
     payload["source_label"] = {

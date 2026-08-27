@@ -16,9 +16,11 @@ DEFAULT_SHOW_DAILY = True
 DEFAULT_SHOW_WEEKLY = True
 DEFAULT_WEEKLY_WORKDAYS = 5
 DEFAULT_PANEL_ICON = "brain"
+DEFAULT_DISPLAY_MODE = "pace"
 ALLOWED_POLL_INTERVALS = (1, 5, 10, 15)
 ALLOWED_WEEKLY_WORKDAYS = tuple(range(1, 8))
 ALLOWED_PANEL_ICONS = frozenset({"none", "brain", "robot", "chip", "circuit", "atom", "terminal", "fire", "boom", "star", "sparkle"})
+ALLOWED_DISPLAY_MODES = frozenset({"pace", "absolute"})
 class ConfigError(ValueError):
     pass
 
@@ -65,6 +67,7 @@ def _default_settings() -> dict[str, object]:
         "show_weekly": DEFAULT_SHOW_WEEKLY,
         "weekly_workdays": DEFAULT_WEEKLY_WORKDAYS,
         "panel_icon": DEFAULT_PANEL_ICON,
+        "display_mode": DEFAULT_DISPLAY_MODE,
     }
 
 
@@ -103,6 +106,15 @@ def _validate_settings(loaded: dict) -> dict[str, object]:
             raise ConfigError("panel_icon must be a supported icon name.")
         settings["panel_icon"] = normalized
 
+    value = loaded.get("display_mode")
+    if value is not None:
+        if not isinstance(value, str):
+            raise ConfigError("display_mode must be 'pace' or 'absolute'.")
+        normalized = value.strip().lower()
+        if normalized not in ALLOWED_DISPLAY_MODES:
+            raise ConfigError("display_mode must be 'pace' or 'absolute'.")
+        settings["display_mode"] = normalized
+
     return settings
 
 
@@ -122,6 +134,7 @@ def write_settings(
     show_weekly: bool | None = None,
     weekly_workdays: int | None = None,
     panel_icon: str | None = None,
+    display_mode: str | None = None,
 ) -> dict[str, object]:
     try:
         settings = read_settings()
@@ -154,6 +167,12 @@ def write_settings(
             raise ConfigError("panel_icon must be a supported icon name.")
         settings["panel_icon"] = normalized
 
+    if display_mode is not None:
+        normalized = display_mode.strip().lower()
+        if normalized not in ALLOWED_DISPLAY_MODES:
+            raise ConfigError("display_mode must be 'pace' or 'absolute'.")
+        settings["display_mode"] = normalized
+
     ensure_dirs()
     SETTINGS_FILE.write_text(
         "\n".join(
@@ -164,6 +183,7 @@ def write_settings(
                 f'show_weekly = {json.dumps(settings["show_weekly"])}',
                 f'weekly_workdays = {settings["weekly_workdays"]}',
                 f'panel_icon = {json.dumps(settings["panel_icon"], ensure_ascii=False)}',
+                f'display_mode = {json.dumps(settings["display_mode"], ensure_ascii=False)}',
                 "",
             )
         ),

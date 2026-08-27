@@ -55,6 +55,7 @@ def _settings_kwargs(settings: dict[str, object]) -> dict[str, object]:
         "weekly_workdays": int(settings.get("weekly_workdays", 5)),
         "poll_interval_minutes": int(settings.get("poll_interval_minutes", 1)),
         "panel_icon": str(settings.get("panel_icon", "brain")),
+        "display_mode": str(settings.get("display_mode", "pace")),
     }
 
 
@@ -69,6 +70,7 @@ def refresh_status() -> dict[str, Any]:
         "show_weekly": True,
         "weekly_workdays": 5,
         "panel_icon": "brain",
+        "display_mode": "pace",
     }
 
     try:
@@ -84,6 +86,7 @@ def refresh_status() -> dict[str, Any]:
                 show_weekly=settings["show_weekly"],
                 weekly_workdays=settings["weekly_workdays"],
                 panel_icon=settings["panel_icon"],
+                display_mode=settings["display_mode"],
             )
             save_success(payload)
             return payload
@@ -103,6 +106,7 @@ def refresh_status() -> dict[str, Any]:
                 show_weekly=settings["show_weekly"],
                 weekly_workdays=settings["weekly_workdays"],
                 panel_icon=settings["panel_icon"],
+                display_mode=settings["display_mode"],
             )
 
         return error_payload(
@@ -116,6 +120,7 @@ def refresh_status() -> dict[str, Any]:
             show_weekly=settings["show_weekly"],
             weekly_workdays=settings["weekly_workdays"],
             panel_icon=settings["panel_icon"],
+            display_mode=settings["display_mode"],
         )
     except ConfigError as exc:
         logging.info("config error: %s", exc)
@@ -130,6 +135,7 @@ def refresh_status() -> dict[str, Any]:
             show_weekly=settings["show_weekly"],
             weekly_workdays=settings["weekly_workdays"],
             panel_icon=settings["panel_icon"],
+            display_mode=settings["display_mode"],
         )
     except PermissionError as exc:
         logging.info("auth required")
@@ -144,6 +150,7 @@ def refresh_status() -> dict[str, Any]:
             show_weekly=settings["show_weekly"],
             weekly_workdays=settings["weekly_workdays"],
             panel_icon=settings["panel_icon"],
+            display_mode=settings["display_mode"],
         )
     except RuntimeError as exc:
         logging.info("auth runtime error: %s", exc)
@@ -158,6 +165,7 @@ def refresh_status() -> dict[str, Any]:
             show_weekly=settings["show_weekly"],
             weekly_workdays=settings["weekly_workdays"],
             panel_icon=settings["panel_icon"],
+            display_mode=settings["display_mode"],
         )
     except (OSError, json.JSONDecodeError) as exc:
         logging.info("parse error: %s", exc.__class__.__name__)
@@ -172,6 +180,7 @@ def refresh_status() -> dict[str, Any]:
             show_weekly=settings["show_weekly"],
             weekly_workdays=settings["weekly_workdays"],
             panel_icon=settings["panel_icon"],
+            display_mode=settings["display_mode"],
         )
     except Exception as exc:
         logging.info("network error: %s", exc.__class__.__name__)
@@ -181,9 +190,12 @@ def refresh_status() -> dict[str, Any]:
             "Could not refresh Codex analytics data.",
             last_success=last_success,
             poll_interval_minutes=settings["poll_interval_minutes"],
-            display_format=settings["display_format"],
+            show_session=settings["show_session"],
+            show_daily=settings["show_daily"],
+            show_weekly=settings["show_weekly"],
             weekly_workdays=settings["weekly_workdays"],
             panel_icon=settings["panel_icon"],
+            display_mode=settings["display_mode"],
         )
 
 
