@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from .config import DEFAULT_DISPLAY_FORMAT
-
 
 def clamp_percent(value: float) -> int:
     return max(0, min(100, round(value)))
@@ -29,14 +27,10 @@ def build_display(
     weekly_used_percent: int,
     weekly_reset_at: datetime,
     now: datetime,
-    display_format: str = DEFAULT_DISPLAY_FORMAT,
 ) -> str:
     reset_date = weekly_reset_at.astimezone().strftime("%m.%d.")
     quota_remaining = remaining_percent(weekly_used_percent)
-    if display_format == "compact":
-        return f"{quota_remaining}% | {reset_date}"
-
-    return f"Heti keret {quota_remaining}% | Reset {reset_date}"
+    return f"{quota_remaining}% | {reset_date}"
 
 
 def ok_payload(
@@ -46,7 +40,9 @@ def ok_payload(
     weekly_used_percent: int,
     source_label: str | None = None,
     poll_interval_minutes: int | None = None,
-    display_format: str = DEFAULT_DISPLAY_FORMAT,
+    show_session: bool = True,
+    show_daily: bool = True,
+    show_weekly: bool = True,
     weekly_workdays: int = 5,
     panel_icon: str = "brain",
     session_used_percent: int | None = None,
@@ -69,7 +65,6 @@ def ok_payload(
             used_percent,
             local_reset,
             local_now,
-            display_format=display_format,
         ),
         "weekly_percent": remaining_percent(used_percent),
         "weekly_used_percent": used_percent,
@@ -92,7 +87,9 @@ def ok_payload(
         "source": source,
         "settings": {
             **({"poll_interval_minutes": poll_interval_minutes} if poll_interval_minutes is not None else {}),
-            "display_format": display_format,
+            "show_session": show_session,
+            "show_daily": show_daily,
+            "show_weekly": show_weekly,
             "weekly_workdays": weekly_workdays,
             "panel_icon": panel_icon,
         },
@@ -106,7 +103,9 @@ def error_payload(
     *,
     last_success: dict | None = None,
     poll_interval_minutes: int | None = None,
-    display_format: str = DEFAULT_DISPLAY_FORMAT,
+    show_session: bool = True,
+    show_daily: bool = True,
+    show_weekly: bool = True,
     weekly_workdays: int = 5,
     panel_icon: str = "brain",
 ) -> dict:
@@ -117,7 +116,9 @@ def error_payload(
         "message": message,
         "settings": {
             **({"poll_interval_minutes": poll_interval_minutes} if poll_interval_minutes is not None else {}),
-            "display_format": display_format,
+            "show_session": show_session,
+            "show_daily": show_daily,
+            "show_weekly": show_weekly,
             "weekly_workdays": weekly_workdays,
             "panel_icon": panel_icon,
         },

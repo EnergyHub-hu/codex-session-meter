@@ -41,28 +41,20 @@ def test_ok_payload_display_shape(budapest_tz) -> None:
 
     assert payload["ok"] is True
     assert payload["status"] == "ok"
-    assert payload["display"] == "Heti keret 89% | Reset 05.29."
+    assert payload["display"] == "89% | 05.29."
     assert payload["weekly_used_percent"] == 11
     assert payload["weekly_percent"] == 89
     assert payload["weekly_reset_date_local"] == "05.29."
     assert payload["remaining_seconds"] == 617580
     assert payload["settings"]["panel_icon"] == "brain"
-
-
-def test_ok_payload_compact_display_omits_labels(budapest_tz) -> None:
-    now = datetime.fromisoformat("2026-05-22T12:41:00+02:00")
-    weekly_reset_at = datetime.fromisoformat("2026-05-29T16:14:00+02:00")
-
-    payload = ok_payload(weekly_reset_at, now, "test_source", weekly_used_percent=11, display_format="compact")
-
-    assert payload["display"] == "89% | 05.29."
+    assert payload["settings"]["show_session"] is True
 
 
 def test_build_display_shows_the_weekly_quota(budapest_tz) -> None:
     now = datetime.fromisoformat("2026-05-22T12:41:00+02:00")
     weekly_reset_at = datetime.fromisoformat("2026-05-29T16:14:00+02:00")
 
-    assert build_display(11, weekly_reset_at, now) == "Heti keret 89% | Reset 05.29."
+    assert build_display(11, weekly_reset_at, now) == "89% | 05.29."
 
 
 def test_ok_payload_includes_session_window_when_present(budapest_tz) -> None:
@@ -108,7 +100,7 @@ def test_error_payload_auth_required_shape() -> None:
     assert payload["status"] == "auth_required"
     assert payload["display"] == "Codex: bejelentkezés kell"
     assert "login_url" not in payload
-    assert payload["settings"]["display_format"] == "verbose"
+    assert payload["settings"]["show_weekly"] is True
     assert payload["source_label"] == "Codex CLI auth"
 
 

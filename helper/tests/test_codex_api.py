@@ -29,7 +29,9 @@ def test_rate_limits_payload_uses_primary_as_the_weekly_window() -> None:
         response,
         now,
         poll_interval_minutes=1,
-        display_format="verbose",
+        show_session=True,
+        show_daily=True,
+        show_weekly=True,
         weekly_workdays=5,
         panel_icon="brain",
     )
@@ -67,7 +69,9 @@ def test_rate_limits_payload_classifies_windows_by_duration() -> None:
         response,
         now,
         poll_interval_minutes=1,
-        display_format="verbose",
+        show_session=True,
+        show_daily=True,
+        show_weekly=True,
         weekly_workdays=5,
         panel_icon="brain",
     )
@@ -94,7 +98,9 @@ def test_rate_limits_payload_keeps_single_window_without_duration_as_weekly() ->
         response,
         now,
         poll_interval_minutes=1,
-        display_format="verbose",
+        show_session=True,
+        show_daily=True,
+        show_weekly=True,
         weekly_workdays=5,
         panel_icon="brain",
     )

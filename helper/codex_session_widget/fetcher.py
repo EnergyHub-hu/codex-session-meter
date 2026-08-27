@@ -49,7 +49,9 @@ def save_success(payload: dict) -> None:
 
 def _settings_kwargs(settings: dict[str, object]) -> dict[str, object]:
     return {
-        "display_format": str(settings.get("display_format", "verbose")),
+        "show_session": bool(settings.get("show_session", True)),
+        "show_daily": bool(settings.get("show_daily", True)),
+        "show_weekly": bool(settings.get("show_weekly", True)),
         "weekly_workdays": int(settings.get("weekly_workdays", 5)),
         "poll_interval_minutes": int(settings.get("poll_interval_minutes", 1)),
         "panel_icon": str(settings.get("panel_icon", "brain")),
@@ -62,7 +64,9 @@ def refresh_status() -> dict[str, Any]:
     last_success = load_last_success()
     settings = {
         "poll_interval_minutes": 1,
-        "display_format": "verbose",
+        "show_session": True,
+        "show_daily": True,
+        "show_weekly": True,
         "weekly_workdays": 5,
         "panel_icon": "brain",
     }
@@ -75,7 +79,9 @@ def refresh_status() -> dict[str, Any]:
                 codex_api.read_rate_limits(),
                 now,
                 poll_interval_minutes=settings["poll_interval_minutes"],
-                display_format=settings["display_format"],
+                show_session=settings["show_session"],
+                show_daily=settings["show_daily"],
+                show_weekly=settings["show_weekly"],
                 weekly_workdays=settings["weekly_workdays"],
                 panel_icon=settings["panel_icon"],
             )
@@ -92,7 +98,9 @@ def refresh_status() -> dict[str, Any]:
                 "Run `codex-session-meter login` or `codex login` so the Codex CLI API can read account rate limits.",
                 last_success=last_success,
                 poll_interval_minutes=settings["poll_interval_minutes"],
-                display_format=settings["display_format"],
+                show_session=settings["show_session"],
+                show_daily=settings["show_daily"],
+                show_weekly=settings["show_weekly"],
                 weekly_workdays=settings["weekly_workdays"],
                 panel_icon=settings["panel_icon"],
             )
