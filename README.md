@@ -54,7 +54,7 @@ If GNOME does not load it immediately, log out/in, or use Extension Manager.
 codex-session-meter status --json
 codex-session-meter refresh --json
 codex-session-meter settings --json
-codex-session-meter configure --poll-interval 5 --display-format compact --weekly-workdays 5 --json
+codex-session-meter configure --poll-interval 5 --weekly-workdays 5 --json
 codex-session-meter login
 codex-session-meter logout
 codex-session-meter auth-status
@@ -73,10 +73,13 @@ Menu-controlled preferences are stored in `~/.config/codex-session-meter/setting
 
 ```toml
 poll_interval_minutes = 1
-display_format = "verbose"
+show_session = true
+show_daily = true
+show_weekly = true
 weekly_workdays = 5
 panel_icon = "brain"
 
+# show_session/show_daily/show_weekly toggle the compact panel components
 # weekly_workdays values: 1-7; 100% is divided evenly across these calendar days
 # panel_icon values: none, brain, robot, chip, circuit, atom, terminal, fire, boom, star, sparkle
 ```

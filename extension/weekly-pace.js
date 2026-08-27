@@ -21,11 +21,15 @@ export function dailyLimitIndicatorLevel(dailyRemainingPercent) {
     return String(Math.round(Math.max(0, dailyRemainingPercent)));
 }
 
-export function dailyLimitIndicatorColor(dailyRemainingPercent) {
-    if (!Number.isFinite(dailyRemainingPercent))
+export function dailyLimitIndicatorColor(remainingPercent) {
+    return limitIndicatorColor(remainingPercent);
+}
+
+export function limitIndicatorColor(remainingPercent) {
+    if (!Number.isFinite(remainingPercent))
         return null;
 
-    const boundedPercent = Math.max(0, Math.min(100, dailyRemainingPercent));
+    const boundedPercent = Math.max(0, Math.min(100, remainingPercent));
     for (let index = 1; index < DAILY_LIMIT_COLOR_STOPS.length; index++) {
         const [upperPercent, upperColor] = DAILY_LIMIT_COLOR_STOPS[index];
         const [lowerPercent, lowerColor] = DAILY_LIMIT_COLOR_STOPS[index - 1];
@@ -42,6 +46,14 @@ export function dailyLimitIndicatorColor(dailyRemainingPercent) {
     return DAILY_LIMIT_COLOR_STOPS[DAILY_LIMIT_COLOR_STOPS.length - 1][1];
 }
 
+export function resolveLimitIndicatorPercents({sessionPercent, weeklyPercent}) {
+    const bounded = value => (Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : null);
+    return {
+        session: bounded(sessionPercent),
+        weekly: bounded(weeklyPercent),
+    };
+}
+
 function hexToRgb(hex) {
     return [1, 3, 5].map(index => Number.parseInt(hex.slice(index, index + 2), 16));
 }
@@ -50,17 +62,15 @@ function rgbToHex(rgb) {
     return `#${rgb.map(component => component.toString(16).padStart(2, '0')).join('').toUpperCase()}`;
 }
 
-export function formatPanelDisplay({dailyRemainingPercent, weeklyPercent, weeklyResetDate, sessionResetTime, displayFormat, fallback}) {
-    if (dailyRemainingPercent === null)
-        return fallback;
-
-    const daily = Math.round(dailyRemainingPercent);
-    const weekly = weeklyPercent ?? 'n/a';
-    const reset = [sessionResetTime || null, weeklyResetDate || null].filter(Boolean).join(' / ') || 'nincs';
-    if (displayFormat === 'verbose')
-        return `Napi ${daily}% | Heti ${weekly}% | Reset ${reset}`;
-
-    return `${daily}% / ${weekly}% | ${reset}`;
+export function compactPanelComponents({sessionPercent, sessionResetTime, dailyRemainingPercent, weeklyPercent, weeklyResetDate}) {
+    const percentLabel = value => Number.isFinite(value) ? `${Math.round(value)}%` : null;
+    const resetLabel = value => value ? `(${value})` : null;
+    const joinParts = (...parts) => parts.filter(Boolean).join(' ') || null;
+    return {
+        session: joinParts(percentLabel(sessionPercent), resetLabel(sessionResetTime)),
+        daily: percentLabel(dailyRemainingPercent),
+        weekly: joinParts(percentLabel(weeklyPercent), resetLabel(weeklyResetDate)),
+    };
 }
 
 export function resolveDailyRemainingPercent({sessionPercent, quotaRemainingPercent, resetAt, lastUpdated, workdays}) {

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {calculateWeeklyPace, dailyLimitIndicatorColor, dailyLimitIndicatorLevel, formatPanelDisplay, resolveDailyRemainingPercent} from './weekly-pace.js';
+import {calculateWeeklyPace, compactPanelComponents, dailyLimitIndicatorLevel, limitIndicatorColor, resolveDailyRemainingPercent, resolveLimitIndicatorPercents} from './weekly-pace.js';
 
 test('prefers the real five hour session percent when the payload provides one', () => {
     const value = resolveDailyRemainingPercent({
@@ -103,66 +103,75 @@ test('normalizes daily quota drops for four and three workdays', () => {
 });
 
 test('colors the daily indicator proportionally from red to green', () => {
-    assert.equal(dailyLimitIndicatorColor(0), '#D1495B');
-    assert.equal(dailyLimitIndicatorColor(20), '#EE964B');
-    assert.equal(dailyLimitIndicatorColor(40), '#F4D35E');
-    assert.equal(dailyLimitIndicatorColor(55), '#99D98C');
-    assert.equal(dailyLimitIndicatorColor(70), '#52B69A');
-    assert.equal(dailyLimitIndicatorColor(85), '#34A0A4');
-    assert.equal(dailyLimitIndicatorColor(100), '#168AAD');
-    assert.equal(dailyLimitIndicatorColor(50), '#B7D77D');
-    assert.equal(dailyLimitIndicatorColor(null), null);
+    assert.equal(limitIndicatorColor(0), '#D1495B');
+    assert.equal(limitIndicatorColor(20), '#EE964B');
+    assert.equal(limitIndicatorColor(40), '#F4D35E');
+    assert.equal(limitIndicatorColor(55), '#99D98C');
+    assert.equal(limitIndicatorColor(70), '#52B69A');
+    assert.equal(limitIndicatorColor(85), '#34A0A4');
+    assert.equal(limitIndicatorColor(100), '#168AAD');
+    assert.equal(limitIndicatorColor(50), '#B7D77D');
+    assert.equal(limitIndicatorColor(null), null);
 });
 
-test('adds daily weekly and reset labels in verbose panel format', () => {
-    assert.equal(
-        formatPanelDisplay({
-            dailyRemainingPercent: 125,
-            weeklyPercent: 89,
-            weeklyResetDate: '07.20.',
-            sessionResetTime: '12:56',
-            displayFormat: 'verbose',
-            fallback: 'Codex: ismeretlen hiba',
-        }),
-        'Napi 125% | Heti 89% | Reset 12:56 / 07.20.'
+test('resolves separate session and weekly indicator percents', () => {
+    assert.deepEqual(
+        resolveLimitIndicatorPercents({sessionPercent: 84, weeklyPercent: 95}),
+        {session: 84, weekly: 95}
+    );
+    assert.deepEqual(
+        resolveLimitIndicatorPercents({sessionPercent: 130, weeklyPercent: -5}),
+        {session: 100, weekly: 0}
+    );
+    assert.deepEqual(
+        resolveLimitIndicatorPercents({sessionPercent: null, weeklyPercent: undefined}),
+        {session: null, weekly: null}
     );
 });
 
-test('keeps the compact panel format unlabeled', () => {
-    assert.equal(
-        formatPanelDisplay({
-            dailyRemainingPercent: 125,
-            weeklyPercent: 89,
-            weeklyResetDate: '07.20.',
+test('builds compact panel components with percent and reset labels', () => {
+    assert.deepEqual(
+        compactPanelComponents({
+            sessionPercent: 87,
             sessionResetTime: '12:56',
-            displayFormat: 'compact',
-            fallback: 'Codex: ismeretlen hiba',
+            dailyRemainingPercent: 125,
+            weeklyPercent: 89.4,
+            weeklyResetDate: '07.20.',
         }),
-        '125% / 89% | 12:56 / 07.20.'
+        {
+            session: '87% (12:56)',
+            daily: '125%',
+            weekly: '89% (07.20.)',
+        }
     );
 });
 
-test('shows only the weekly reset without a five hour window', () => {
-    assert.equal(
-        formatPanelDisplay({
-            dailyRemainingPercent: 125,
-            weeklyPercent: 89,
-            weeklyResetDate: '07.20.',
+test('marks missing compact component data as null', () => {
+    assert.deepEqual(
+        compactPanelComponents({
+            sessionPercent: null,
             sessionResetTime: null,
-            displayFormat: 'verbose',
-            fallback: 'Codex: ismeretlen hiba',
-        }),
-        'Napi 125% | Heti 89% | Reset 07.20.'
-    );
-    assert.equal(
-        formatPanelDisplay({
-            dailyRemainingPercent: 125,
-            weeklyPercent: 89,
+            dailyRemainingPercent: null,
+            weeklyPercent: null,
             weeklyResetDate: null,
-            sessionResetTime: '12:56',
-            displayFormat: 'compact',
-            fallback: 'Codex: ismeretlen hiba',
         }),
-        '125% / 89% | 12:56'
+        {
+            session: null,
+            daily: null,
+            weekly: null,
+        }
     );
+});
+
+test('keeps the session label without a five hour reset time', () => {
+    const components = compactPanelComponents({
+        sessionPercent: 42,
+        sessionResetTime: null,
+        dailyRemainingPercent: 30,
+        weeklyPercent: 60,
+        weeklyResetDate: '09.01.',
+    });
+
+    assert.equal(components.session, '42%');
+    assert.equal(components.weekly, '60% (09.01.)');
 });

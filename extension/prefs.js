@@ -9,7 +9,7 @@ export default class CodexSessionPreferences extends ExtensionPreferences {
         const group = new Adw.PreferencesGroup({title: 'Codex Session Meter'});
         const row = new Adw.ActionRow({
             title: 'Configuration',
-            subtitle: 'The data source is Codex CLI only. Use the panel menu for poll interval, display format, icon, and weekly limit visibility.',
+            subtitle: 'The data source is Codex CLI only. Use the panel menu for poll interval, limit visibility, icon, and weekly workdays.',
         });
         group.add(row);
         page.add(group);
