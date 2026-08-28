@@ -94,6 +94,10 @@ Never commit captured HAR files, cookies, Codex auth files, tokens, auth headers
 
 Logs avoid raw payloads, cookies, authorization headers, and other secrets.
 
+## Changelog
+
+A változásokat a [CHANGELOG.md](CHANGELOG.md) fájl dokumentálja.
+
 ## Before Publishing
 
 1. Run `python -m pytest` from `helper/`, or the project virtualenv equivalent.
