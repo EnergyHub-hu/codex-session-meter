@@ -260,7 +260,7 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
         this._panelComponents = compactPanelComponents({
             sessionPercent: payload?.session_percent,
             sessionResetTime: payload?.session_reset_time_local,
-            dailyRemainingPercent: payload?.session_percent,
+            dailyRemainingPercent: payload?.daily_usage_limit,
             weeklyPercent,
             weeklyResetDate,
         });
