@@ -9,7 +9,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
-import {compactPanelComponents, dailyLimitIndicatorLevel, limitIndicatorColor, calculateSessionPace, resolveDailyRemainingPercent, dailyPaceColor, sessionPaceColor} from './weekly-pace.js';
+import {compactPanelComponents, dailyLimitIndicatorLevel, limitIndicatorColor, calculateSessionPace, resolveDailyRemainingPercent, dailyPaceColor, sessionPaceColor, dailyConsumptionPace, paceToColor, weeklyConsumptionPace, weeklyPaceColor} from './weekly-pace.js';
 
 const DEFAULT_SETTINGS = {
     poll_interval_minutes: 1,
@@ -101,11 +101,16 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
         this._weeklyGroup = new St.BoxLayout({
             y_align: Clutter.ActorAlign.CENTER,
         });
+        this._weeklyLimitDot = new St.Widget({
+            style_class: 'codex-session-daily-limit-dot codex-session-daily-limit-unknown',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
         this._weeklyLabel = new St.Label({
             text: '',
             y_align: Clutter.ActorAlign.CENTER,
             style_class: 'codex-session-label',
         });
+        this._weeklyGroup.add_child(this._weeklyLimitDot);
         this._weeklyGroup.add_child(this._weeklyLabel);
 
         this._componentWidgets = new Map([
@@ -233,17 +238,27 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
             lastUpdated: payload?.last_updated,
             sessionWindowMins: payload?.session_window_mins,
         });
-        const dailyPace = resolveDailyRemainingPercent({
-            quotaRemainingPercent: weeklyPercent,
-            resetAt: payload?.weekly_reset_at,
-            lastUpdated: payload?.last_updated,
-            workdays,
-        });
+        const resetAtMillis = Date.parse(payload?.weekly_reset_at || '');
+        const lastUpdatedMillis = Date.parse(payload?.last_updated || '');
+        const DAY_MILLIS = 24 * 60 * 60 * 1000;
+        const lastUpdatedDate = new Date(lastUpdatedMillis);
+        const dayStartMillis = Date.UTC(lastUpdatedDate.getFullYear(), lastUpdatedDate.getMonth(), lastUpdatedDate.getDate());
+        const elapsedMillis = Math.max(0, lastUpdatedMillis - dayStartMillis);
+        const elapsedFraction = Math.min(1, elapsedMillis / DAY_MILLIS);
+        const dailyLimit = 100 / workdays;
+        const actualUsage = 100 - weeklyPercent;
+        const expectedUsage = elapsedFraction * dailyLimit;
+        const dailyPaceValue = dailyConsumptionPace({actualUsage, expectedUsage});
         this._statusItem.label.set_text(`Állapot: ${payload?.status || 'unknown'}`);
-        this._applyLimitDot(this._sessionLimitDot, payload?.session_used_percent, sessionPaceColor(sessionPace));
-        this._applyLimitDot(this._dailyLimitDot, payload?.session_percent, dailyPaceColor(dailyPace));
+        this._applyLimitDot(this._sessionLimitDot, payload?.session_percent, sessionPaceColor(sessionPace));
+        this._applyLimitDot(this._dailyLimitDot, payload?.daily_usage_limit, paceToColor(dailyPaceValue));
+        const weeklyPace = weeklyConsumptionPace({
+            quotaRemainingPercent: weeklyPercent,
+            elapsedFraction: elapsedFraction,
+        });
+        this._applyLimitDot(this._weeklyLimitDot, weeklyPercent, weeklyPaceColor(weeklyPace));
         this._panelComponents = compactPanelComponents({
-            sessionPercent: payload?.session_used_percent,
+            sessionPercent: payload?.session_percent,
             sessionResetTime: payload?.session_reset_time_local,
             dailyRemainingPercent: payload?.session_percent,
             weeklyPercent,

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {calculateWeeklyPace, calculateSessionPace, compactPanelComponents, dailyLimitIndicatorLevel, limitIndicatorColor, resolveDailyRemainingPercent, resolveLimitIndicatorPercents, normalizePace, paceColor, dailyPaceColor, sessionPaceColor} from './weekly-pace.js';
+import {calculateWeeklyPace, calculateSessionPace, compactPanelComponents, dailyLimitIndicatorLevel, limitIndicatorColor, resolveDailyRemainingPercent, resolveLimitIndicatorPercents, normalizePace, paceColor, dailyPaceColor, sessionPaceColor, dailyConsumptionPace, paceToColor, weeklyConsumptionPace, weeklyPaceColor} from './weekly-pace.js';
 
 test('calculates daily remaining from weekly pace only', () => {
     const value = resolveDailyRemainingPercent({
@@ -301,4 +301,76 @@ test('sessionPaceColor uses session bounds', () => {
     assert.ok(red);
     assert.ok(green);
     assert.notEqual(red, green);
+});
+
+test('dailyConsumptionPace returns 1.0 for zero usage at day start', () => {
+    assert.equal(dailyConsumptionPace({actualUsage: 0, expectedUsage: 0}), 1.0);
+});
+
+test('dailyConsumptionPace returns Infinity when usage before time', () => {
+    assert.equal(dailyConsumptionPace({actualUsage: 5, expectedUsage: 0}), Infinity);
+});
+
+test('dailyConsumptionPace calculates pace correctly', () => {
+    assert.equal(dailyConsumptionPace({actualUsage: 10, expectedUsage: 10}), 1.0);
+    assert.equal(dailyConsumptionPace({actualUsage: 5, expectedUsage: 10}), 0.5);
+    assert.equal(dailyConsumptionPace({actualUsage: 20, expectedUsage: 10}), 2.0);
+});
+
+test('dailyConsumptionPace returns null for invalid input', () => {
+    assert.equal(dailyConsumptionPace({actualUsage: NaN, expectedUsage: 10}), null);
+    assert.equal(dailyConsumptionPace({actualUsage: 10, expectedUsage: NaN}), null);
+});
+
+test('paceToColor returns correct colors for thresholds', () => {
+    assert.equal(paceToColor(0.5), '#15803D');
+    assert.equal(paceToColor(0.8), '#15803D');
+    assert.equal(paceToColor(0.81), '#84CC16');
+    assert.equal(paceToColor(0.95), '#FACC15');
+    assert.equal(paceToColor(1.05), '#FACC15');
+    assert.equal(paceToColor(1.06), '#EA580C');
+    assert.equal(paceToColor(1.25), '#EA580C');
+    assert.equal(paceToColor(1.26), '#B91C1C');
+});
+
+test('paceToColor returns null for invalid input', () => {
+    assert.equal(paceToColor(null), null);
+    assert.equal(paceToColor(NaN), null);
+    assert.equal(paceToColor(Infinity), null);
+});
+
+test('weeklyConsumptionPace calculates pace correctly', () => {
+    assert.equal(weeklyConsumptionPace({quotaRemainingPercent: 80, elapsedFraction: 0.5}), 0.4);
+    assert.equal(weeklyConsumptionPace({quotaRemainingPercent: 50, elapsedFraction: 0.5}), 1.0);
+    assert.equal(weeklyConsumptionPace({quotaRemainingPercent: 20, elapsedFraction: 0.5}), 1.6);
+});
+
+test('weeklyConsumptionPace returns 1.0 for zero usage at week start', () => {
+    assert.equal(weeklyConsumptionPace({quotaRemainingPercent: 100, elapsedFraction: 0}), 1.0);
+});
+
+test('weeklyConsumptionPace returns Infinity when usage before time', () => {
+    assert.equal(weeklyConsumptionPace({quotaRemainingPercent: 95, elapsedFraction: 0}), Infinity);
+});
+
+test('weeklyConsumptionPace returns null for invalid input', () => {
+    assert.equal(weeklyConsumptionPace({quotaRemainingPercent: NaN, elapsedFraction: 0.5}), null);
+    assert.equal(weeklyConsumptionPace({quotaRemainingPercent: 80, elapsedFraction: NaN}), null);
+});
+
+test('weeklyPaceColor returns correct colors for thresholds', () => {
+    assert.equal(weeklyPaceColor(0.5), '#15803D');
+    assert.equal(weeklyPaceColor(0.8), '#15803D');
+    assert.equal(weeklyPaceColor(0.81), '#84CC16');
+    assert.equal(weeklyPaceColor(0.95), '#FACC15');
+    assert.equal(weeklyPaceColor(1.05), '#FACC15');
+    assert.equal(weeklyPaceColor(1.06), '#EA580C');
+    assert.equal(weeklyPaceColor(1.25), '#EA580C');
+    assert.equal(weeklyPaceColor(1.26), '#B91C1C');
+});
+
+test('weeklyPaceColor returns null for invalid input', () => {
+    assert.equal(weeklyPaceColor(null), null);
+    assert.equal(weeklyPaceColor(NaN), null);
+    assert.equal(weeklyPaceColor(Infinity), null);
 });

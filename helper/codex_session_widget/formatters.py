@@ -73,6 +73,7 @@ def ok_payload(
         ),
         "weekly_percent": remaining_percent(used_percent),
         "weekly_used_percent": used_percent,
+        "daily_usage_limit": clamp_percent(remaining_percent(used_percent) / weekly_workdays),
         "weekly_reset_at": local_reset.isoformat(timespec="seconds"),
         "weekly_reset_date_local": local_reset.strftime("%m.%d."),
         "source_label": source_label or "Codex usage API",

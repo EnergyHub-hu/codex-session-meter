@@ -92,6 +92,46 @@ export function sessionPaceColor(pace) {
     return paceColor(pace, SESSION_PACE_MIN, SESSION_PACE_MAX);
 }
 
+export function weeklyPaceColor(pace) {
+    return paceToColor(pace);
+}
+
+const PACE_THRESHOLDS = [
+    {max: 0.80, color: '#15803D'},
+    {max: 0.94, color: '#84CC16'},
+    {max: 1.05, color: '#FACC15'},
+    {max: 1.25, color: '#EA580C'},
+    {max: Infinity, color: '#B91C1C'},
+];
+
+export function dailyConsumptionPace({actualUsage, expectedUsage}) {
+    if (!Number.isFinite(actualUsage) || !Number.isFinite(expectedUsage))
+        return null;
+    if (expectedUsage === 0 && actualUsage === 0)
+        return 1.0;
+    if (expectedUsage === 0 && actualUsage > 0)
+        return Infinity;
+    return actualUsage / expectedUsage;
+}
+
+export function weeklyConsumptionPace({quotaRemainingPercent, elapsedFraction}) {
+    if (!Number.isFinite(quotaRemainingPercent) || !Number.isFinite(elapsedFraction))
+        return null;
+    const actualUsage = 100 - quotaRemainingPercent;
+    const expectedUsage = elapsedFraction * 100;
+    return dailyConsumptionPace({actualUsage, expectedUsage});
+}
+
+export function paceToColor(pace) {
+    if (!Number.isFinite(pace))
+        return null;
+    for (const {max, color} of PACE_THRESHOLDS) {
+        if (pace <= max)
+            return color;
+    }
+    return PACE_THRESHOLDS[PACE_THRESHOLDS.length - 1].color;
+}
+
 export function resolveLimitIndicatorPercents({sessionPercent, weeklyPercent}) {
     const bounded = value => (Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : null);
     return {
@@ -173,5 +213,6 @@ export function calculateWeeklyPace({quotaRemainingPercent, resetAt, lastUpdated
         elapsedWorkdays,
         workdays,
         budgetPerWorkday,
+        elapsedFraction,
     };
 }

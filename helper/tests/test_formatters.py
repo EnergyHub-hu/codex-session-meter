@@ -127,3 +127,21 @@ def test_error_payload_config_error_source_label() -> None:
     payload = error_payload("config_error", "Codex: hibás konfiguráció", "Invalid config.")
 
     assert payload["source_label"] == "Configuration"
+
+
+def test_ok_payload_daily_usage_limit(budapest_tz) -> None:
+    now = datetime.fromisoformat("2026-05-22T12:41:00+02:00")
+    weekly_reset_at = datetime.fromisoformat("2026-05-29T16:14:00+02:00")
+
+    payload = ok_payload(weekly_reset_at, now, "test_source", weekly_used_percent=11, weekly_workdays=5)
+
+    assert payload["daily_usage_limit"] == 18
+
+
+def test_ok_payload_daily_usage_limit_three_workdays(budapest_tz) -> None:
+    now = datetime.fromisoformat("2026-05-22T12:41:00+02:00")
+    weekly_reset_at = datetime.fromisoformat("2026-05-29T16:14:00+02:00")
+
+    payload = ok_payload(weekly_reset_at, now, "test_source", weekly_used_percent=10, weekly_workdays=3)
+
+    assert payload["daily_usage_limit"] == 30
