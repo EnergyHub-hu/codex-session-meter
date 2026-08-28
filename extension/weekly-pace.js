@@ -1,4 +1,8 @@
 const DAY_MILLIS = 24 * 60 * 60 * 1000;
+
+function weekStartMillis(resetAtMillis) {
+    return resetAtMillis - 7 * DAY_MILLIS;
+}
 const LIMIT_COLOR_STOPS = [
     [0, '#B91C1C'],
     [25, '#EA580C'],
@@ -114,6 +118,17 @@ export function dailyConsumptionPace({actualUsage, expectedUsage}) {
     return actualUsage / expectedUsage;
 }
 
+export function elapsedFractionOfWeek(resetAt, lastUpdated) {
+    const resetAtMillis = Date.parse(resetAt || '');
+    const lastUpdatedMillis = Date.parse(lastUpdated || '');
+    if (!Number.isFinite(resetAtMillis) || !Number.isFinite(lastUpdatedMillis))
+        return null;
+    const weekMillis = 7 * DAY_MILLIS;
+    const windowStartMillis = weekStartMillis(resetAtMillis);
+    const elapsedMillis = Math.max(0, lastUpdatedMillis - windowStartMillis);
+    return Math.min(1, elapsedMillis / weekMillis);
+}
+
 export function weeklyConsumptionPace({quotaRemainingPercent, elapsedFraction}) {
     if (!Number.isFinite(quotaRemainingPercent) || !Number.isFinite(elapsedFraction))
         return null;
@@ -197,9 +212,9 @@ export function calculateWeeklyPace({quotaRemainingPercent, resetAt, lastUpdated
     }
 
     const boundedQuotaRemainingPercent = Math.max(0, Math.min(100, quotaRemainingPercent));
-    const windowStartMillis = resetAtMillis - (7 * DAY_MILLIS);
-    const windowDurationMillis = 7 * DAY_MILLIS;
-    const elapsedMillis = Math.max(0, lastUpdatedMillis - windowStartMillis);
+    const weeklyStartMillis = weekStartMillis(resetAtMillis);
+    const windowDurationMillis = workdays * DAY_MILLIS;
+    const elapsedMillis = Math.max(0, lastUpdatedMillis - weeklyStartMillis);
     const elapsedFraction = Math.min(1, elapsedMillis / windowDurationMillis);
     const elapsedWorkdays = elapsedFraction * workdays;
     const budgetPerWorkday = 100 / workdays;
