@@ -3,6 +3,24 @@ const DAY_MILLIS = 24 * 60 * 60 * 1000;
 function weekStartMillis(resetAtMillis) {
     return resetAtMillis - 7 * DAY_MILLIS;
 }
+
+function localMidnightEpochMillis(date) {
+    return new Date(
+        date.getFullYear(),
+        date.getMonth(),
+        date.getDate(),
+        0, 0, 0, 0
+    ).getTime();
+}
+
+function nextLocalMidnightEpochMillis(date) {
+    return new Date(
+        date.getFullYear(),
+        date.getMonth(),
+        date.getDate() + 1,
+        0, 0, 0, 0
+    ).getTime();
+}
 const LIMIT_COLOR_STOPS = [
     [0, '#B91C1C'],
     [25, '#EA580C'],
@@ -208,18 +226,39 @@ export function calculateWeeklyPace({quotaRemainingPercent, resetAt, lastUpdated
             elapsedWorkdays: null,
             workdays,
             budgetPerWorkday: null,
+            elapsedFraction: null,
         };
     }
 
     const boundedQuotaRemainingPercent = Math.max(0, Math.min(100, quotaRemainingPercent));
     const weeklyStartMillis = weekStartMillis(resetAtMillis);
-    const windowDurationMillis = workdays * DAY_MILLIS;
+    const consumptionHorizonMillis = weeklyStartMillis + workdays * DAY_MILLIS;
+    const fullDayBudget = 100 / workdays;
+
+    const lastUpdatedDate = new Date(lastUpdatedMillis);
+    const localToday00 = localMidnightEpochMillis(lastUpdatedDate);
+    const localNextDay00 = nextLocalMidnightEpochMillis(lastUpdatedDate);
+
+    const effectiveDayStart = Math.max(localToday00, weeklyStartMillis);
+    const effectiveDayEnd = Math.min(localNextDay00, consumptionHorizonMillis);
+    const todayDuration = Math.max(0, effectiveDayEnd - effectiveDayStart);
+    const todayBudget = todayDuration / DAY_MILLIS * fullDayBudget;
+
+    const allowedByEOD = Math.max(0, Math.min(100,
+        (Math.min(localNextDay00, consumptionHorizonMillis) - weeklyStartMillis)
+        / (workdays * DAY_MILLIS)
+        * 100
+    ));
+
+    const actualUsage = 100 - boundedQuotaRemainingPercent;
+    const available = allowedByEOD - actualUsage;
+    const divisor = todayBudget > 0 ? todayBudget : fullDayBudget;
+    const dailyRemainingPercent = available / divisor * 100;
+
     const elapsedMillis = Math.max(0, lastUpdatedMillis - weeklyStartMillis);
-    const elapsedFraction = Math.min(1, elapsedMillis / windowDurationMillis);
+    const elapsedFraction = Math.min(1, elapsedMillis / (workdays * DAY_MILLIS));
     const elapsedWorkdays = elapsedFraction * workdays;
-    const budgetPerWorkday = 100 / workdays;
-    const todayMinimumRemainingPercent = Math.max(0, 100 - elapsedWorkdays * budgetPerWorkday);
-    const dailyRemainingPercent = ((boundedQuotaRemainingPercent - todayMinimumRemainingPercent) / budgetPerWorkday) * 100;
+    const todayMinimumRemainingPercent = Math.max(0, 100 - elapsedWorkdays * fullDayBudget);
 
     return {
         quotaRemainingPercent: boundedQuotaRemainingPercent,
@@ -227,7 +266,7 @@ export function calculateWeeklyPace({quotaRemainingPercent, resetAt, lastUpdated
         dailyRemainingPercent,
         elapsedWorkdays,
         workdays,
-        budgetPerWorkday,
+        budgetPerWorkday: fullDayBudget,
         elapsedFraction,
     };
 }

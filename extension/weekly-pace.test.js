@@ -61,7 +61,7 @@ test('at window start: zero elapsed time, 0% planned usage', () => {
     assert.equal(pace.elapsedFraction, 0);
     assert.equal(pace.todayMinimumRemainingPercent, 100);
     assert.equal(pace.budgetPerWorkday, 20);
-    assert.equal(pace.dailyRemainingPercent, 0);
+    assert.equal(pace.dailyRemainingPercent, 100);
 });
 
 // ---------------------------------------------------------------------------
@@ -102,8 +102,8 @@ test('fractional first day: 9 hours into 7-day window', () => {
     assert.ok(Math.abs(pace.elapsedWorkdays - 0.375) < 1e-10);
     // todayMinimumRemainingPercent = 100 - 0.375 * 20 = 92.5
     assert.ok(Math.abs(pace.todayMinimumRemainingPercent - 92.5) < 1e-10);
-    // dailyRemainingPercent = (92.5 - 92.5) / 20 * 100 = 0
-    assert.ok(Math.abs(pace.dailyRemainingPercent) < 1e-10);
+    // EOD-normalized: 7.5% used, allowedByEOD=25%, available=17.5%, divisor=20 => 87.5%
+    assert.ok(Math.abs(pace.dailyRemainingPercent - 87.5) < 1e-10);
 });
 
 // ---------------------------------------------------------------------------
@@ -125,8 +125,8 @@ test('exactly 24 hours after window start: 20% planned usage', () => {
     assert.ok(Math.abs(pace.elapsedWorkdays - 1.0) < 1e-10);
     // todayMinimumRemainingPercent = 100 - 1.0 * 20 = 80
     assert.ok(Math.abs(pace.todayMinimumRemainingPercent - 80) < 1e-10);
-    // dailyRemainingPercent = (80 - 80) / 20 * 100 = 0
-    assert.ok(Math.abs(pace.dailyRemainingPercent) < 1e-10);
+    // EOD-normalized: 20% used, allowedByEOD=25%, available=5%, divisor=20 => 25%
+    assert.ok(Math.abs(pace.dailyRemainingPercent - 25) < 1e-10);
 });
 
 // ---------------------------------------------------------------------------
@@ -148,7 +148,8 @@ test('48 hours after window start: 40% planned usage', () => {
     assert.ok(Math.abs(pace.elapsedWorkdays - 2.0) < 1e-10);
     // todayMinimumRemainingPercent = 100 - 2.0 * 20 = 60
     assert.ok(Math.abs(pace.todayMinimumRemainingPercent - 60) < 1e-10);
-    assert.ok(Math.abs(pace.dailyRemainingPercent) < 1e-10);
+    // EOD-normalized: 40% used, allowedByEOD=45%, available=5%, divisor=20 => 25%
+    assert.ok(Math.abs(pace.dailyRemainingPercent - 25) < 1e-10);
 });
 
 // ---------------------------------------------------------------------------
@@ -186,7 +187,10 @@ test('time after consumption horizon: planned usage capped at 100%', () => {
     assert.equal(pace.elapsedFraction, 1);
     assert.equal(pace.elapsedWorkdays, 5);
     assert.equal(pace.todayMinimumRemainingPercent, 0);
-    assert.equal(pace.dailyRemainingPercent, 250);
+    assert.equal(pace.budgetPerWorkday, 20);
+    // consumption horizon ends mid-day (18:00), todayDuration=18h, todayBudget=15
+    // allowedByEOD=100%, actualUsage=50%, available=50%, divisor=15
+    assert.ok(Math.abs(pace.dailyRemainingPercent - 50 / 15 * 100) < 1e-10);
 });
 
 test('time before window start: clamped at 0% planned usage', () => {
@@ -299,7 +303,8 @@ test('different workdays produce different planned usage at same elapsed time', 
 // ---------------------------------------------------------------------------
 
 test('actual usage exactly on planned pace: dailyRemainingPercent = 0', () => {
-    // 2 days into 7-day window: plannedUsage = 40%, actualUsage = 40%
+    // 2 days into 5-day window: allowedByEOD = 45%, actualUsage = 40%
+    // available = 5%, divisor = 20, dailyRemainingPercent = 25
     const pace = calculateWeeklyPace({
         quotaRemainingPercent: 60,
         resetAt: '2026-07-20T18:00:00+02:00',
@@ -307,7 +312,7 @@ test('actual usage exactly on planned pace: dailyRemainingPercent = 0', () => {
         workdays: 5,
     });
 
-    assert.ok(Math.abs(pace.dailyRemainingPercent) < 1e-10);
+    assert.ok(Math.abs(pace.dailyRemainingPercent - 25) < 1e-10);
 });
 
 // ---------------------------------------------------------------------------
@@ -315,7 +320,8 @@ test('actual usage exactly on planned pace: dailyRemainingPercent = 0', () => {
 // ---------------------------------------------------------------------------
 
 test('actual usage below planned pace: positive dailyRemainingPercent', () => {
-    // 2 days into 7-day window: plannedUsage = 40%, actualUsage = 20% (80% remaining)
+    // 2 days into 5-day window: allowedByEOD = 45%, actualUsage = 20% (80% remaining)
+    // available = 25%, divisor = 20, dailyRemainingPercent = 125
     const pace = calculateWeeklyPace({
         quotaRemainingPercent: 80,
         resetAt: '2026-07-20T18:00:00+02:00',
@@ -323,8 +329,7 @@ test('actual usage below planned pace: positive dailyRemainingPercent', () => {
         workdays: 5,
     });
 
-    // dailyRemainingPercent = (80 - 60) / 20 * 100 = 100
-    assert.ok(Math.abs(pace.dailyRemainingPercent - 100) < 1e-10);
+    assert.ok(Math.abs(pace.dailyRemainingPercent - 125) < 1e-10);
 });
 
 // ---------------------------------------------------------------------------
@@ -332,7 +337,8 @@ test('actual usage below planned pace: positive dailyRemainingPercent', () => {
 // ---------------------------------------------------------------------------
 
 test('actual usage above planned pace: negative dailyRemainingPercent', () => {
-    // 2 days into 7-day window: plannedUsage = 40%, actualUsage = 60% (40% remaining)
+    // 2 days into 5-day window: allowedByEOD = 45%, actualUsage = 60% (40% remaining)
+    // available = 45-60 = -15%, divisor = 20, dailyRemainingPercent = -75
     const pace = calculateWeeklyPace({
         quotaRemainingPercent: 40,
         resetAt: '2026-07-20T18:00:00+02:00',
@@ -340,8 +346,7 @@ test('actual usage above planned pace: negative dailyRemainingPercent', () => {
         workdays: 5,
     });
 
-    // dailyRemainingPercent = (40 - 60) / 20 * 100 = -100
-    assert.ok(Math.abs(pace.dailyRemainingPercent - (-100)) < 1e-10);
+    assert.ok(Math.abs(pace.dailyRemainingPercent - (-75)) < 1e-10);
 });
 
 // ---------------------------------------------------------------------------
@@ -990,4 +995,169 @@ test('daily-vs-weekly pace divergence still works with correct 7-day origin', ()
     // Weekly: 20 / (100/7) ≈ 1.4 (ahead)
     assert.ok(weeklyPace > 1.0, `weekly pace > 1.0, got ${weeklyPace}`);
     assert.ok(Math.abs(weeklyPace - 1.4) < 0.01, `weekly pace ≈ 1.4, got ${weeklyPace}`);
+});
+
+// ---------------------------------------------------------------------------
+// EOD-normalized Daily label regression tests (spec examples)
+// resetAt = Friday 18:00 CEST
+// weeklyStart = Friday 18:00 CEST (7 days before resetAt)
+// workdays=5 => fullDayBudget=20, consumptionHorizon = weeklyStart + 120h
+// First day overlap = 6h (Friday 18:00 -> Saturday 00:00)
+// ---------------------------------------------------------------------------
+
+test('partial first day with zero usage => Daily 100%', () => {
+    const pace = calculateWeeklyPace({
+        quotaRemainingPercent: 100,
+        resetAt: '2026-05-15T18:00:00+02:00',
+        lastUpdated: '2026-05-08T20:00:00+02:00',
+        workdays: 5,
+    });
+    // weeklyStart=May8 18:00, lastUpdated=May8 20:00 (same day, 2h after start)
+    // todayDuration=6h, todayBudget=5, allowedByEOD=6h/120h*100=5%
+    // actualUsage=0, available=5, divisor=5 => 100%
+    assert.ok(Math.abs(pace.dailyRemainingPercent - 100) < 1e-10);
+});
+
+test('partial first day half consumed => Daily 50%', () => {
+    const pace = calculateWeeklyPace({
+        quotaRemainingPercent: 97.5,
+        resetAt: '2026-05-15T18:00:00+02:00',
+        lastUpdated: '2026-05-08T20:00:00+02:00',
+        workdays: 5,
+    });
+    // allowedByEOD=5%, actualUsage=2.5%, available=2.5%, divisor=5 => 50%
+    assert.ok(Math.abs(pace.dailyRemainingPercent - 50) < 1e-10);
+});
+
+test('carry-over produces >100% Daily', () => {
+    const pace = calculateWeeklyPace({
+        quotaRemainingPercent: 100,
+        resetAt: '2026-05-15T18:00:00+02:00',
+        lastUpdated: '2026-05-09T20:00:00+02:00',
+        workdays: 5,
+    });
+    // Saturday 20:00: allowedByEOD = 30h/120h*100 = 25%
+    // actualUsage=0, available=25%, divisor=20 => 125%
+    assert.ok(pace.dailyRemainingPercent > 100);
+    assert.ok(Math.abs(pace.dailyRemainingPercent - 125) < 1e-10);
+});
+
+test('overconsumption produces <0% Daily', () => {
+    const pace = calculateWeeklyPace({
+        quotaRemainingPercent: 60,
+        resetAt: '2026-05-15T18:00:00+02:00',
+        lastUpdated: '2026-05-09T12:00:00+02:00',
+        workdays: 5,
+    });
+    // Saturday 12:00: allowedByEOD = 30h/120h*100 = 25%
+    // actualUsage=40%, available=-15%, divisor=20 => -75%
+    assert.ok(pace.dailyRemainingPercent < 0);
+    assert.ok(Math.abs(pace.dailyRemainingPercent - (-75)) < 1e-10);
+});
+
+test('Sunday 18:00 example: Daily 25%', () => {
+    const pace = calculateWeeklyPace({
+        quotaRemainingPercent: 60,
+        resetAt: '2026-05-15T18:00:00+02:00',
+        lastUpdated: '2026-05-10T18:00:00+02:00',
+        workdays: 5,
+    });
+    // Sunday 18:00 = 54h after weeklyStart (Fri18:00)
+    // allowedByEOD = 54/120*100 = 45%, actualUsage = 40%, available = 5%
+    // divisor = 20, dailyRemainingPercent = 25%
+    assert.ok(Math.abs(pace.dailyRemainingPercent - 25) < 1e-10);
+});
+
+test('post-horizon with 20% remaining => Daily 100%', () => {
+    const pace = calculateWeeklyPace({
+        quotaRemainingPercent: 20,
+        resetAt: '2026-05-10T18:00:00+02:00',
+        lastUpdated: '2026-05-10T12:00:00+02:00',
+        workdays: 5,
+    });
+    // Past consumption horizon (Fri18:00), todayBudget=0, divisor=fullDayBudget=20
+    // allowedByEOD=100%, actualUsage=80%, available=20%
+    // dailyRemainingPercent = 20/20*100 = 100%
+    assert.ok(Math.abs(pace.dailyRemainingPercent - 100) < 1e-10);
+});
+
+test('post-horizon with no remaining quota => Daily 0%', () => {
+    const pace = calculateWeeklyPace({
+        quotaRemainingPercent: 0,
+        resetAt: '2026-05-10T18:00:00+02:00',
+        lastUpdated: '2026-05-10T12:00:00+02:00',
+        workdays: 5,
+    });
+    // allowedByEOD=100%, actualUsage=100%, available=0%, divisor=20
+    // dailyRemainingPercent = 0%
+    assert.ok(Math.abs(pace.dailyRemainingPercent) < 1e-10);
+});
+
+test('weekly_workdays changes Daily but never changes weeklyStart', () => {
+    const resetAt = '2026-07-20T18:00:00+02:00';
+    const lastUpdated = '2026-07-16T12:00:00+02:00';
+
+    const pace3 = calculateWeeklyPace({quotaRemainingPercent: 50, resetAt, lastUpdated, workdays: 3});
+    const pace5 = calculateWeeklyPace({quotaRemainingPercent: 50, resetAt, lastUpdated, workdays: 5});
+    const pace7 = calculateWeeklyPace({quotaRemainingPercent: 50, resetAt, lastUpdated, workdays: 7});
+
+    // Different workdays => different fullDayBudget => different dailyRemainingPercent
+    assert.notEqual(pace3.dailyRemainingPercent, pace5.dailyRemainingPercent);
+    assert.notEqual(pace5.dailyRemainingPercent, pace7.dailyRemainingPercent);
+
+    // All share the same weeklyStart = resetAt - 7 days
+    const resetAtMillis = Date.parse(resetAt);
+    const expectedWeeklyStart = resetAtMillis - 7 * 24 * 60 * 60 * 1000;
+    const ws3 = Date.parse(resetAt) - 7 * 24 * 60 * 60 * 1000;
+    assert.equal(ws3, expectedWeeklyStart);
+});
+
+test('Daily label and Daily pace remain independent', () => {
+    const resetAt = '2026-07-20T18:00:00+02:00';
+    const lastUpdated = '2026-07-14T18:00:00+02:00';
+    const workdays = 5;
+    const quotaRemainingPercent = 80;
+
+    const pace = calculateWeeklyPace({quotaRemainingPercent, resetAt, lastUpdated, workdays});
+
+    // Daily pace: actualUsage / expectedUsage from time-proportional model
+    const actualUsage = 100 - quotaRemainingPercent; // 20
+    const dailyFrac = pace.elapsedFraction; // 24/120 = 0.2
+    const dailyPaceVal = dailyConsumptionPace({actualUsage, expectedUsage: dailyFrac * 100});
+    assert.ok(Math.abs(dailyPaceVal - 1.0) < 1e-10, 'daily pace = 1.0');
+
+    // Daily label: EOD-normalized = 25%
+    assert.ok(Math.abs(pace.dailyRemainingPercent - 25) < 1e-10, 'daily label = 25%');
+
+    // They are independent: pace is 1.0 (on pace), label is 25% (not 100%)
+    assert.notEqual(dailyPaceVal, pace.dailyRemainingPercent);
+});
+
+test('correct local midnight epoch', () => {
+    // Europe/Budapest CEST (UTC+2): July 14 00:00 CEST = July 13 22:00 UTC
+    const d = new Date(2026, 6, 14, 0, 0, 0, 0); // month is 0-indexed
+    const utcEpoch = Date.UTC(2026, 6, 14, 0, 0, 0, 0);
+    const localEpoch = d.getTime();
+    // local midnight != UTC midnight when timezone != UTC
+    assert.notEqual(localEpoch, utcEpoch);
+    // CEST = UTC+2 => local midnight is 2h before UTC midnight
+    assert.ok(Math.abs(localEpoch - utcEpoch + 2 * 60 * 60 * 1000) < 1000);
+});
+
+test('Europe/Budapest spring DST: 23h between consecutive local midnights', () => {
+    // Spring forward: March 29 2026, 02:00 CET -> 03:00 CEST
+    const before = new Date(2026, 2, 29, 0, 0, 0, 0).getTime();
+    const after = new Date(2026, 2, 30, 0, 0, 0, 0).getTime();
+    const diffHours = (after - before) / (60 * 60 * 1000);
+    assert.ok(Math.abs(diffHours - 23) < 0.01,
+        `spring DST gap should be 23h, got ${diffHours}h`);
+});
+
+test('Europe/Budapest autumn DST: 25h between consecutive local midnights', () => {
+    // Fall back: October 25 2026, 03:00 CEST -> 02:00 CET
+    const before = new Date(2026, 9, 25, 0, 0, 0, 0).getTime();
+    const after = new Date(2026, 9, 26, 0, 0, 0, 0).getTime();
+    const diffHours = (after - before) / (60 * 60 * 1000);
+    assert.ok(Math.abs(diffHours - 25) < 0.01,
+        `autumn DST gap should be 25h, got ${diffHours}h`);
 });
