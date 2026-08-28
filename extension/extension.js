@@ -249,9 +249,15 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
         const actualUsage = 100 - weeklyPercent;
         const expectedUsage = elapsedFraction * dailyLimit;
         const dailyPaceValue = dailyConsumptionPace({actualUsage, expectedUsage});
+        const dailyRemainingPercent = resolveDailyRemainingPercent({
+            quotaRemainingPercent: weeklyPercent,
+            resetAt: payload?.weekly_reset_at,
+            lastUpdated: payload?.last_updated,
+            workdays,
+        });
         this._statusItem.label.set_text(`Állapot: ${payload?.status || 'unknown'}`);
         this._applyLimitDot(this._sessionLimitDot, payload?.session_percent, sessionPaceColor(sessionPace));
-        this._applyLimitDot(this._dailyLimitDot, payload?.daily_usage_limit, paceToColor(dailyPaceValue));
+        this._applyLimitDot(this._dailyLimitDot, dailyRemainingPercent, paceToColor(dailyPaceValue));
         const weeklyPace = weeklyConsumptionPace({
             quotaRemainingPercent: weeklyPercent,
             elapsedFraction: elapsedFraction,
@@ -260,7 +266,7 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
         this._panelComponents = compactPanelComponents({
             sessionPercent: payload?.session_percent,
             sessionResetTime: payload?.session_reset_time_local,
-            dailyRemainingPercent: payload?.daily_usage_limit,
+            dailyRemainingPercent,
             weeklyPercent,
             weeklyResetDate,
         });
