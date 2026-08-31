@@ -7,7 +7,7 @@ import {
     traceCalculateSessionPace,
     traceCalculateWeeklyPace,
     traceDailyConsumptionPace,
-    traceElapsedFractionOfWeek,
+    traceElapsedFractionOfConsumptionHorizon,
     traceWeeklyConsumptionPace,
     tracePaceToColor,
     tracePaceColor,
@@ -94,7 +94,7 @@ function buildTrace(payload) {
     const dailyLevelTrace = traceDailyLimitIndicatorLevel(dailyRemainingPercent);
 
     // --- Weekly block ---
-    const weeklyElapsedTrace = traceElapsedFractionOfWeek(weeklyResetAt, lastUpdated);
+    const weeklyElapsedTrace = traceElapsedFractionOfConsumptionHorizon(weeklyResetAt, lastUpdated, weeklyWorkdays);
     let weeklyPaceTrace2;
     if (weeklyElapsedTrace.result != null && Number.isFinite(weeklyPercent)) {
         weeklyPaceTrace2 = traceWeeklyConsumptionPace({
@@ -198,6 +198,7 @@ function buildTrace(payload) {
                 weeklyUsedPercent,
                 weeklyResetAt,
                 lastUpdated,
+                weeklyWorkdays,
             },
             remaining: {
                 raw: weeklyPercent,

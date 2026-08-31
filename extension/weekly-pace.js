@@ -306,7 +306,8 @@ export function traceDailyConsumptionPace({actualUsage, expectedUsage}) {
 }
 
 // ---------------------------------------------------------------------------
-// elapsedFractionOfWeek — shared internal
+// elapsedFractionOfWeek — shared internal (deprecated: use consumption horizon)
+// Kept for backward compatibility — delegates to 7-day horizon.
 // ---------------------------------------------------------------------------
 function _elapsedFractionOfWeekInternal(resetAt, lastUpdated) {
     const trace = {
@@ -343,6 +344,75 @@ export function elapsedFractionOfWeek(resetAt, lastUpdated) {
 
 export function traceElapsedFractionOfWeek(resetAt, lastUpdated) {
     return _elapsedFractionOfWeekInternal(resetAt, lastUpdated);
+}
+
+// ---------------------------------------------------------------------------
+// elapsedFractionOfConsumptionHorizon — shared internal
+// Weekly quota window remains 7 days (weeklyStart = reset - 7*DAY),
+// but expected consumption spreads over workdays * 24h.
+// ---------------------------------------------------------------------------
+function _elapsedFractionOfConsumptionHorizonInternal(resetAt, lastUpdated, workdays) {
+    const trace = {
+        resetAt,
+        lastUpdated,
+        workdays,
+        resetAtMillis: Date.parse(resetAt || ''),
+        lastUpdatedMillis: Date.parse(lastUpdated || ''),
+        isResetFinite: null,
+        isLastUpdatedFinite: null,
+        isWorkdaysValid: null,
+        weeklyStartMillis: null,
+        consumptionDurationMillis: null,
+        consumptionHorizonMillis: null,
+        elapsedMillis: null,
+        rawFraction: null,
+        clampedFraction: null,
+        result: null,
+    };
+    trace.isResetFinite = Number.isFinite(trace.resetAtMillis);
+    trace.isLastUpdatedFinite = Number.isFinite(trace.lastUpdatedMillis);
+    trace.isWorkdaysValid = Number.isFinite(workdays) && workdays > 0;
+    if (!trace.isResetFinite || !trace.isLastUpdatedFinite || !trace.isWorkdaysValid) {
+        trace.result = null;
+        return {result: null, trace};
+    }
+    trace.weeklyStartMillis = weekStartMillis(trace.resetAtMillis);
+    trace.consumptionDurationMillis = workdays * DAY_MILLIS;
+    if (!Number.isFinite(trace.consumptionDurationMillis) || trace.consumptionDurationMillis <= 0) {
+        trace.result = null;
+        return {result: null, trace};
+    }
+    trace.consumptionHorizonMillis = trace.weeklyStartMillis + trace.consumptionDurationMillis;
+    trace.elapsedMillis = Math.max(0, trace.lastUpdatedMillis - trace.weeklyStartMillis);
+    trace.rawFraction = trace.elapsedMillis / trace.consumptionDurationMillis;
+    trace.clampedFraction = Math.min(1, Math.max(0, trace.rawFraction));
+    trace.result = trace.clampedFraction;
+    return {result: trace.result, trace};
+}
+
+export function elapsedFractionOfConsumptionHorizon(resetAt, lastUpdated, workdays) {
+    // Support both positional (resetAt, lastUpdated, workdays) and object {resetAt, lastUpdated, workdays}
+    if (resetAt !== null && typeof resetAt === 'object' && !Array.isArray(resetAt) && 'resetAt' in resetAt) {
+        const obj = resetAt;
+        return _elapsedFractionOfConsumptionHorizonInternal(obj.resetAt, obj.lastUpdated, obj.workdays).result;
+    }
+    return _elapsedFractionOfConsumptionHorizonInternal(resetAt, lastUpdated, workdays).result;
+}
+
+export function traceElapsedFractionOfConsumptionHorizon(resetAt, lastUpdated, workdays) {
+    if (resetAt !== null && typeof resetAt === 'object' && !Array.isArray(resetAt) && 'resetAt' in resetAt) {
+        const obj = resetAt;
+        return _elapsedFractionOfConsumptionHorizonInternal(obj.resetAt, obj.lastUpdated, obj.workdays);
+    }
+    return _elapsedFractionOfConsumptionHorizonInternal(resetAt, lastUpdated, workdays);
+}
+
+export function elapsedFractionOfWorkdayHorizon(resetAt, lastUpdated, workdays) {
+    return elapsedFractionOfConsumptionHorizon(resetAt, lastUpdated, workdays);
+}
+
+export function traceElapsedFractionOfWorkdayHorizon(resetAt, lastUpdated, workdays) {
+    return traceElapsedFractionOfConsumptionHorizon(resetAt, lastUpdated, workdays);
 }
 
 // ---------------------------------------------------------------------------
@@ -445,6 +515,7 @@ function _calculateSessionPaceInternal({sessionPercent, sessionResetAt, lastUpda
         elapsedMinutes: null,
         timeElapsedPercentRaw: null,
         timeElapsedPercentClamped: null,
+        expectedRemainingPercent: null,
         rawPace: null,
         clampedPace: null,
         result: null,
@@ -467,7 +538,8 @@ function _calculateSessionPaceInternal({sessionPercent, sessionResetAt, lastUpda
     trace.elapsedMinutes = trace.elapsedMillis / 60000;
     trace.timeElapsedPercentRaw = (trace.elapsedMillis / trace.sessionTotalMillis) * 100;
     trace.timeElapsedPercentClamped = Math.max(0, Math.min(100, trace.timeElapsedPercentRaw));
-    trace.rawPace = sessionPercent - trace.timeElapsedPercentClamped;
+    trace.expectedRemainingPercent = 100 - trace.timeElapsedPercentClamped;
+    trace.rawPace = sessionPercent - trace.expectedRemainingPercent;
     trace.clampedPace = Math.max(-100, Math.min(100, trace.rawPace));
     trace.result = trace.clampedPace;
     return {result: trace.result, trace};

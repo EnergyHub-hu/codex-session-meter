@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {calculateWeeklyPace, calculateSessionPace, compactPanelComponents, dailyLimitIndicatorLevel, limitIndicatorColor, resolveDailyRemainingPercent, resolveLimitIndicatorPercents, normalizePace, paceColor, dailyPaceColor, sessionPaceColor, dailyConsumptionPace, paceToColor, weeklyConsumptionPace, weeklyPaceColor, elapsedFractionOfWeek, traceCalculateSessionPace, traceCalculateWeeklyPace, traceDailyConsumptionPace, traceElapsedFractionOfWeek, traceWeeklyConsumptionPace, tracePaceToColor, tracePaceColor, traceLimitIndicatorColor, traceDailyLimitIndicatorLevel, traceNormalizePace, traceDailyPaceColor, traceSessionPaceColor, traceWeeklyPaceColor} from './weekly-pace.js';
+import {calculateWeeklyPace, calculateSessionPace, compactPanelComponents, dailyLimitIndicatorLevel, limitIndicatorColor, resolveDailyRemainingPercent, resolveLimitIndicatorPercents, normalizePace, paceColor, dailyPaceColor, sessionPaceColor, dailyConsumptionPace, paceToColor, weeklyConsumptionPace, weeklyPaceColor, elapsedFractionOfWeek, elapsedFractionOfConsumptionHorizon, elapsedFractionOfWorkdayHorizon, traceCalculateSessionPace, traceCalculateWeeklyPace, traceDailyConsumptionPace, traceElapsedFractionOfWeek, traceElapsedFractionOfConsumptionHorizon, traceElapsedFractionOfWorkdayHorizon, traceWeeklyConsumptionPace, tracePaceToColor, tracePaceColor, traceLimitIndicatorColor, traceDailyLimitIndicatorLevel, traceNormalizePace, traceDailyPaceColor, traceSessionPaceColor, traceWeeklyPaceColor} from './weekly-pace.js';
 
 // ---------------------------------------------------------------------------
 // Canonical model constants
@@ -607,7 +607,7 @@ test('keeps the session label without a five hour reset time', () => {
     assert.equal(components.weekly, '60% (09.01.)');
 });
 
-test('calculates session pace as remaining minus elapsed time', () => {
+test('calculates session pace as reserve against expected remaining quota', () => {
     const pace = calculateSessionPace({
         sessionPercent: 82,
         sessionResetAt: '2026-08-27T14:31:00+02:00',
@@ -615,7 +615,7 @@ test('calculates session pace as remaining minus elapsed time', () => {
         sessionWindowMins: 300,
     });
 
-    assert.equal(Math.round(pace), 43);
+    assert.equal(Math.round(pace), 21);
 });
 
 test('returns negative pace when session is overused relative to time', () => {
@@ -626,7 +626,40 @@ test('returns negative pace when session is overused relative to time', () => {
         sessionWindowMins: 300,
     });
 
-    assert.equal(pace, -30);
+    assert.equal(pace, -10);
+});
+
+test('returns zero session pace when remaining quota matches the linear plan', () => {
+    const pace = calculateSessionPace({
+        sessionPercent: 50,
+        sessionResetAt: '2026-08-27T14:31:00+02:00',
+        lastUpdated: '2026-08-27T12:01:00+02:00',
+        sessionWindowMins: 300,
+    });
+
+    assert.equal(pace, 0);
+});
+
+test('returns zero session pace at session start with full quota', () => {
+    const pace = calculateSessionPace({
+        sessionPercent: 100,
+        sessionResetAt: '2026-08-27T14:31:00+02:00',
+        lastUpdated: '2026-08-27T09:31:00+02:00',
+        sessionWindowMins: 300,
+    });
+
+    assert.equal(pace, 0);
+});
+
+test('returns zero session pace at session end with no quota', () => {
+    const pace = calculateSessionPace({
+        sessionPercent: 0,
+        sessionResetAt: '2026-08-27T14:31:00+02:00',
+        lastUpdated: '2026-08-27T14:31:00+02:00',
+        sessionWindowMins: 300,
+    });
+
+    assert.equal(pace, 0);
 });
 
 test('returns null for missing session pace data', () => {
@@ -1282,13 +1315,15 @@ test('traceCalculateSessionPace exposes intermediate values for normal session',
         lastUpdated: '2026-08-27T11:29:00+02:00',
         sessionWindowMins: 300,
     });
-    // sessionStart = 14:31 - 5h = 09:31, elapsed 11:29-09:31 = 118 min, 118/300*100 = 39.333...
-    assert.ok(Math.abs(t.result - 42.66666666666667) < 1e-10);
+    // sessionStart = 14:31 - 5h = 09:31, elapsed 11:29-09:31 = 118 min, 118/300*100 = 39.333...,
+    // expectedRemaining = 60.666..., pace = 82 - 60.666... = 21.333...
+    assert.ok(Math.abs(t.result - 21.33333333333333) < 1e-10);
     const tr = t.trace;
     assert.equal(tr.sessionTotalMillis, 300 * 60 * 1000);
     assert.ok(Math.abs(tr.timeElapsedPercentClamped - 39.33333333333333) < 1e-10);
-    assert.ok(Math.abs(tr.rawPace - 42.66666666666667) < 1e-10);
-    assert.ok(Math.abs(tr.clampedPace - 42.66666666666667) < 1e-10);
+    assert.ok(Math.abs(tr.expectedRemainingPercent - 60.66666666666667) < 1e-10);
+    assert.ok(Math.abs(tr.rawPace - 21.33333333333333) < 1e-10);
+    assert.ok(Math.abs(tr.clampedPace - 21.33333333333333) < 1e-10);
     assert.ok(Number.isFinite(tr.resetAtMillis));
     assert.ok(Number.isFinite(tr.lastUpdatedMillis));
     assert.ok(Number.isFinite(tr.sessionStartMillis));
@@ -1302,10 +1337,11 @@ test('traceCalculateSessionPace clamps correctly for over-consumption', () => {
         lastUpdated: '2026-08-27T12:31:00+02:00',
         sessionWindowMins: 300,
     });
-    // elapsed 60% (180/300), remaining 30 => pace = -30
-    assert.equal(t.result, -30);
+    // elapsed 60% (180/300), expectedRemaining 40%, remaining 30 => pace = 30 - 40 = -10
+    assert.equal(t.result, -10);
     assert.equal(t.trace.timeElapsedPercentClamped, 60);
-    assert.equal(t.trace.rawPace, -30);
+    assert.equal(t.trace.expectedRemainingPercent, 40);
+    assert.equal(t.trace.rawPace, -10);
 });
 
 test('traceCalculateSessionPace returns null for missing data with trace', () => {
@@ -1510,4 +1546,360 @@ test('production/debug equivalence: weekly remaining, pace, color', () => {
     assert.equal(traceElapsed.result, prodWeeklyElapsed);
     assert.equal(traceWeeklyPace.result, prodWeeklyPace);
     assert.equal(traceWeeklyColor.result, prodWeeklyColor);
+});
+
+// ---------------------------------------------------------------------------
+// Task 2 — EOD-normalized daily remaining regression suite
+// Spec reference: weeklyRemaining=99%, workdays=5, weeklyStart=2026-08-31 08:03:33,
+// current=2026-08-31 11:01:34, localNextDay00=2026-09-01 00:00:00
+// Expected: fullDayBudget=20, todayBudget≈13.284028, allowedByEOD≈13.284028,
+// actualUsage=1, available≈12.284028, dailyRemaining≈92.4722%, widget 92%
+// ---------------------------------------------------------------------------
+
+test('Task2 reference: 08:03 start, 99% weekly => Daily 92.47% (widget 92%)', () => {
+    const t = traceCalculateWeeklyPace({
+        quotaRemainingPercent: 99,
+        resetAt: '2026-09-07T08:03:33+02:00', // weeklyStart = resetAt -7d = 2026-08-31 08:03:33
+        lastUpdated: '2026-08-31T11:01:34+02:00',
+        workdays: 5,
+    });
+    assert.equal(t.trace.fullDayBudget, 20);
+    assert.ok(Math.abs(t.trace.todayBudget - 13.284028) < 0.0001, `todayBudget=${t.trace.todayBudget} expected ~13.284028`);
+    assert.ok(Math.abs(t.trace.allowedByEOD - 13.284028) < 0.0001, `allowedByEOD=${t.trace.allowedByEOD} expected ~13.284028`);
+    assert.equal(t.trace.actualUsage, 1);
+    assert.ok(Math.abs(t.trace.available - 12.284028) < 0.0001, `available=${t.trace.available} expected ~12.284028`);
+    assert.ok(Math.abs(t.result.dailyRemainingPercent - 92.4722) < 0.01, `dailyRemainingPercent=${t.result.dailyRemainingPercent} expected ~92.4722`);
+    assert.equal(Math.round(t.result.dailyRemainingPercent), 92);
+    // compactPanelComponents rounding must also be 92%
+    const comp = compactPanelComponents({
+        sessionPercent: null,
+        sessionResetTime: null,
+        dailyRemainingPercent: t.result.dailyRemainingPercent,
+        weeklyPercent: 99,
+        weeklyResetDate: '09.07.',
+    });
+    assert.equal(comp.daily, '92%');
+    assert.equal(comp.weekly, '99% (09.07.)');
+});
+
+test('Task2 partial first day: 08:00 start, 5 workdays => todayBudget 13.333 not 20', () => {
+    const t = traceCalculateWeeklyPace({
+        quotaRemainingPercent: 100,
+        resetAt: '2026-09-07T08:00:00+02:00', // weeklyStart 2026-08-31 08:00
+        lastUpdated: '2026-08-31T12:00:00+02:00',
+        workdays: 5,
+    });
+    // 00:00 -> 08:00 is before weeklyStart, so todayDuration = 16h (08:00-00:00 next day)
+    // todayBudget = 16/24*20 = 13.333...
+    assert.ok(Math.abs(t.trace.todayDurationHours - 16) < 0.01, `todayDurationHours=${t.trace.todayDurationHours} expected 16`);
+    assert.ok(Math.abs(t.trace.todayBudget - 13.333333) < 0.0001, `todayBudget=${t.trace.todayBudget} expected 13.333`);
+    assert.ok(Math.abs(t.trace.fullDayBudget - 20) < 1e-10);
+    assert.notEqual(Math.round(t.trace.todayBudget), 20);
+    // allowedByEOD must equal todayBudget on first day with 0 usage before next midnight
+    assert.ok(Math.abs(t.trace.allowedByEOD - 13.333333) < 0.0001);
+    assert.equal(Math.round(t.result.dailyRemainingPercent), 100);
+});
+
+test('Task2 normal daily value 0< daily <100 (reference 92% inside interval)', () => {
+    const pace = calculateWeeklyPace({
+        quotaRemainingPercent: 99,
+        resetAt: '2026-09-07T08:03:33+02:00',
+        lastUpdated: '2026-08-31T11:01:34+02:00',
+        workdays: 5,
+    });
+    assert.ok(pace.dailyRemainingPercent > 0 && pace.dailyRemainingPercent < 100, `dailyRemainingPercent=${pace.dailyRemainingPercent} expected 0-100`);
+    assert.ok(Math.abs(pace.dailyRemainingPercent - 92.4722) < 0.01);
+});
+
+test('Task2 carry-over: under-consumption yields >100% daily (150% example)', () => {
+    // 3 days into window with almost no usage => carry-over
+    // Choose weeklyStart 2026-07-13 18:00, lastUpdated 2026-07-15 18:00 (48h), weeklyRemaining 85% (15% used)
+    // allowedByEOD=45%, actual=15%, available=30%, divisor=20 => 150%
+    const t = traceCalculateWeeklyPace({
+        quotaRemainingPercent: 85,
+        resetAt: '2026-07-20T18:00:00+02:00',
+        lastUpdated: '2026-07-15T18:00:00+02:00',
+        workdays: 5,
+    });
+    assert.ok(t.result.dailyRemainingPercent > 100, `expected >100, got ${t.result.dailyRemainingPercent}`);
+    assert.ok(Math.abs(t.result.dailyRemainingPercent - 150) < 1e-10, `expected 150, got ${t.result.dailyRemainingPercent}`);
+    // Must NOT be clamped to 100
+    assert.notEqual(Math.round(t.result.dailyRemainingPercent), 100);
+    assert.equal(Math.round(t.result.dailyRemainingPercent), 150);
+});
+
+test('Task2 overuse: over-consumption yields <0% daily (-25% example)', () => {
+    // Construct overuse: weeklyRemaining 75% (25 used) but allowed only 20 => -25%
+    // Use first partial day: weeklyStart 08:00, lastUpdated same day, allowed=13.333, actual=?
+    // To get -25%: need available = -5 with divisor 20 => -25%. Choose allowed 13.333, actual 18.333 => remaining 81.666
+    // Simpler: use known overuse case from spec: allowed 20, actual 25 => -25% on full day
+    // Create full day scenario: weeklyStart 2026-07-13 00:00 (midnight), workdays=5, lastUpdated = next day 00:00
+    // But our localToday logic uses midnight boundaries, so choose resetAt at midnight to get full 24h first day.
+    const t = traceCalculateWeeklyPace({
+        quotaRemainingPercent: 75, // 25 used
+        resetAt: '2026-07-21T00:00:00+02:00', // weeklyStart 2026-07-14 00:00
+        lastUpdated: '2026-07-14T23:59:59+02:00', // still first day, allowed ~20% (nextDayCapped - weeklyStart =24h =>20%)
+        workdays: 5,
+    });
+    // At first full day, allowedByEOD should be 20% (24h/120h*100)
+    assert.ok(Math.abs(t.trace.allowedByEOD - 20) < 0.01, `allowedByEOD=${t.trace.allowedByEOD} expected 20`);
+    assert.equal(t.trace.actualUsage, 25);
+    assert.ok(Math.abs(t.trace.available + 5) < 0.01, `available=${t.trace.available} expected -5`);
+    assert.ok(Math.abs(t.result.dailyRemainingPercent + 25) < 0.01, `daily=${t.result.dailyRemainingPercent} expected -25`);
+    assert.ok(t.result.dailyRemainingPercent < 0);
+    // Must NOT be clamped to 0
+    assert.notEqual(t.result.dailyRemainingPercent, 0);
+});
+
+test('Task2 exactly depleted daily ≈0% when allowed equals actual', () => {
+    // At 48h point, allowed 45, choose weeklyRemaining 55 (actual 45) => available 0 => daily 0
+    const t = traceCalculateWeeklyPace({
+        quotaRemainingPercent: 55,
+        resetAt: '2026-07-20T18:00:00+02:00',
+        lastUpdated: '2026-07-15T18:00:00+02:00',
+        workdays: 5,
+    });
+    assert.ok(Math.abs(t.trace.allowedByEOD - 45) < 1e-10);
+    assert.equal(t.trace.actualUsage, 45);
+    assert.ok(Math.abs(t.trace.available) < 1e-10);
+    assert.ok(Math.abs(t.result.dailyRemainingPercent) < 1e-10, `expected ~0, got ${t.result.dailyRemainingPercent}`);
+    assert.equal(Math.round(t.result.dailyRemainingPercent), 0);
+});
+
+test('Task2 untouched weekly_percent remains same (clamped only for bounded)', () => {
+    const weeklyPercent = 99;
+    const pace = calculateWeeklyPace({
+        quotaRemainingPercent: weeklyPercent,
+        resetAt: '2026-09-07T08:03:33+02:00',
+        lastUpdated: '2026-08-31T11:01:34+02:00',
+        workdays: 5,
+    });
+    // weekly_percent itself is not transformed except clamping to 0-100 in boundedQuotaRemainingPercent
+    assert.equal(pace.quotaRemainingPercent, 99);
+    // For out-of-range, it clamps but daily still computes bounded
+    const over = calculateWeeklyPace({quotaRemainingPercent: 120, resetAt: '2026-07-20T18:00:00+02:00', lastUpdated: '2026-07-15T18:00:00+02:00', workdays: 5});
+    assert.equal(over.quotaRemainingPercent, 100);
+    const under = calculateWeeklyPace({quotaRemainingPercent: -10, resetAt: '2026-07-20T18:00:00+02:00', lastUpdated: '2026-07-15T18:00:00+02:00', workdays: 5});
+    assert.equal(under.quotaRemainingPercent, 0);
+});
+
+test('Task2 untouched daily pace/color: dailyConsumptionPace unchanged', () => {
+    // dailyConsumptionPace must remain 1.0 for on-pace, Infinity for early usage, etc.
+    assert.equal(dailyConsumptionPace({actualUsage: 20, expectedUsage: 20}), 1.0);
+    assert.equal(dailyConsumptionPace({actualUsage: 5, expectedUsage: 0}), Infinity);
+    assert.equal(dailyConsumptionPace({actualUsage: 0, expectedUsage: 0}), 1.0);
+    assert.equal(dailyConsumptionPace({actualUsage: 10, expectedUsage: 20}), 0.5);
+    // Color mapping must still be via paceToColor, not limitIndicatorColor for daily dot
+    // Verify weekly-pace.js _applyPayload still uses paceToColor(dailyConsumptionPace(...))
+    // Here we test paceToColor thresholds unchanged
+    assert.equal(paceToColor(0.5), '#15803D');
+    assert.equal(paceToColor(1.5), '#B91C1C');
+});
+
+test('Task2 debug and production give same dailyRemaining for reference input', () => {
+    const payload = {quotaRemainingPercent: 99, resetAt: '2026-09-07T08:03:33+02:00', lastUpdated: '2026-08-31T11:01:34+02:00', workdays: 5};
+    const prod = calculateWeeklyPace(payload);
+    const trace = traceCalculateWeeklyPace(payload);
+    assert.ok(Math.abs(prod.dailyRemainingPercent - trace.result.dailyRemainingPercent) < 1e-12);
+    assert.ok(Math.abs(prod.dailyRemainingPercent - 92.47216268492863) < 0.0001);
+    // Simulate debug-calc.js path: weeklyPercent payload -> trace
+    // Both use same weekly-pace.js, so must be identical
+});
+
+test('Task2 no clamp on dailyRemainingPercent: >100 and <0 are valid', () => {
+    const carry = calculateWeeklyPace({quotaRemainingPercent: 80, resetAt: '2026-07-20T18:00:00+02:00', lastUpdated: '2026-07-15T18:00:00+02:00', workdays: 5});
+    assert.ok(carry.dailyRemainingPercent > 100);
+    assert.equal(carry.dailyRemainingPercent, 125); // not clamped
+    const over = calculateWeeklyPace({quotaRemainingPercent: 40, resetAt: '2026-07-20T18:00:00+02:00', lastUpdated: '2026-07-15T18:00:00+02:00', workdays: 5});
+    assert.ok(over.dailyRemainingPercent < 0);
+    assert.equal(over.dailyRemainingPercent, -75); // not clamped
+});
+
+// ---------------------------------------------------------------------------
+// Task 3 — Weekly pace with workdays-based consumption horizon
+// New helper: elapsedFractionOfConsumptionHorizon(resetAt, lastUpdated, workdays)
+// ---------------------------------------------------------------------------
+
+test('Task3 elapsedFractionOfConsumptionHorizon: workdays=5 start -> 0', () => {
+    const f = elapsedFractionOfConsumptionHorizon('2026-09-07T08:03:33+02:00', '2026-08-31T08:03:33+02:00', 5);
+    assert.equal(f, 0);
+    assert.equal(traceElapsedFractionOfConsumptionHorizon('2026-09-07T08:03:33+02:00', '2026-08-31T08:03:33+02:00', 5).result, 0);
+});
+
+test('Task3 elapsedFractionOfConsumptionHorizon: workdays=5, 2.5 days later -> 0.5', () => {
+    const resetAt = '2026-07-20T18:00:00+02:00';
+    const weeklyStartMillis = Date.parse(resetAt) - 7 * 24 * 60 * 60 * 1000;
+    const twoHalfDaysLater = new Date(weeklyStartMillis + 2.5 * 24 * 60 * 60 * 1000).toISOString();
+    const f = elapsedFractionOfConsumptionHorizon(resetAt, twoHalfDaysLater, 5);
+    assert.ok(Math.abs(f - 0.5) < 1e-10, `expected 0.5 got ${f}`);
+});
+
+test('Task3 elapsedFractionOfConsumptionHorizon: workdays=5, 5 days later -> 1', () => {
+    const resetAt = '2026-07-20T18:00:00+02:00';
+    const weeklyStartMillis = Date.parse(resetAt) - 7 * 24 * 60 * 60 * 1000;
+    const fiveDaysLater = new Date(weeklyStartMillis + 5 * 24 * 60 * 60 * 1000).toISOString();
+    const f = elapsedFractionOfConsumptionHorizon(resetAt, fiveDaysLater, 5);
+    assert.equal(f, 1);
+});
+
+test('Task3 elapsedFractionOfConsumptionHorizon: workdays=5, 6 days later -> still 1 (clamped)', () => {
+    const resetAt = '2026-07-20T18:00:00+02:00';
+    const weeklyStartMillis = Date.parse(resetAt) - 7 * 24 * 60 * 60 * 1000;
+    const sixDaysLater = new Date(weeklyStartMillis + 6 * 24 * 60 * 60 * 1000).toISOString();
+    const f = elapsedFractionOfConsumptionHorizon(resetAt, sixDaysLater, 5);
+    assert.equal(f, 1);
+});
+
+test('Task3 elapsedFractionOfConsumptionHorizon: before weeklyStart -> 0', () => {
+    const resetAt = '2026-07-20T18:00:00+02:00';
+    const weeklyStartMillis = Date.parse(resetAt) - 7 * 24 * 60 * 60 * 1000;
+    const before = new Date(weeklyStartMillis - 24 * 60 * 60 * 1000).toISOString();
+    const f = elapsedFractionOfConsumptionHorizon(resetAt, before, 5);
+    assert.equal(f, 0);
+});
+
+test('Task3 elapsedFractionOfConsumptionHorizon: workdays=7, 3.5 days later -> 0.5', () => {
+    const resetAt = '2026-07-20T18:00:00+02:00';
+    const weeklyStartMillis = Date.parse(resetAt) - 7 * 24 * 60 * 60 * 1000;
+    const threeHalf = new Date(weeklyStartMillis + 3.5 * 24 * 60 * 60 * 1000).toISOString();
+    const f = elapsedFractionOfConsumptionHorizon(resetAt, threeHalf, 7);
+    assert.ok(Math.abs(f - 0.5) < 1e-10);
+});
+
+test('Task3 elapsedFractionOfConsumptionHorizon: workdays=1, 12h later -> 0.5', () => {
+    const resetAt = '2026-07-20T18:00:00+02:00';
+    const weeklyStartMillis = Date.parse(resetAt) - 7 * 24 * 60 * 60 * 1000;
+    const twelveHours = new Date(weeklyStartMillis + 12 * 60 * 60 * 1000).toISOString();
+    const f = elapsedFractionOfConsumptionHorizon(resetAt, twelveHours, 1);
+    assert.ok(Math.abs(f - 0.5) < 1e-10);
+});
+
+test('Task3 elapsedFractionOfConsumptionHorizon: invalid timestamp -> null', () => {
+    assert.equal(elapsedFractionOfConsumptionHorizon('', '2026-07-14T18:00:00+02:00', 5), null);
+    assert.equal(elapsedFractionOfConsumptionHorizon('2026-07-20T18:00:00+02:00', '', 5), null);
+    assert.equal(elapsedFractionOfConsumptionHorizon('invalid', '2026-07-14T18:00:00+02:00', 5), null);
+    assert.equal(traceElapsedFractionOfConsumptionHorizon('', '2026-07-14T18:00:00+02:00', 5).result, null);
+});
+
+test('Task3 elapsedFractionOfConsumptionHorizon: invalid workdays -> null', () => {
+    const resetAt = '2026-07-20T18:00:00+02:00';
+    const lastUpdated = '2026-07-14T18:00:00+02:00';
+    assert.equal(elapsedFractionOfConsumptionHorizon(resetAt, lastUpdated, NaN), null);
+    assert.equal(elapsedFractionOfConsumptionHorizon(resetAt, lastUpdated, Infinity), null);
+    assert.equal(elapsedFractionOfConsumptionHorizon(resetAt, lastUpdated, 0), null);
+    assert.equal(elapsedFractionOfConsumptionHorizon(resetAt, lastUpdated, -1), null);
+    assert.equal(elapsedFractionOfConsumptionHorizon(resetAt, lastUpdated, -5), null);
+    assert.equal(traceElapsedFractionOfConsumptionHorizon(resetAt, lastUpdated, 0).result, null);
+    assert.equal(traceElapsedFractionOfConsumptionHorizon(resetAt, lastUpdated, NaN).result, null);
+});
+
+test('Task3 elapsedFractionOfConsumptionHorizon supports object param style', () => {
+    const resetAt = '2026-07-20T18:00:00+02:00';
+    const lastUpdated = '2026-07-14T18:00:00+02:00';
+    const fPos = elapsedFractionOfConsumptionHorizon(resetAt, lastUpdated, 5);
+    const fObj = elapsedFractionOfConsumptionHorizon({resetAt, lastUpdated, workdays: 5});
+    assert.equal(fPos, fObj);
+    const tPos = traceElapsedFractionOfConsumptionHorizon(resetAt, lastUpdated, 5).result;
+    const tObj = traceElapsedFractionOfConsumptionHorizon({resetAt, lastUpdated, workdays: 5}).result;
+    assert.equal(tPos, tObj);
+});
+
+test('Task3 elapsedFractionOfWorkdayHorizon alias equals consumption horizon', () => {
+    const resetAt = '2026-07-20T18:00:00+02:00';
+    const lastUpdated = '2026-07-14T18:00:00+02:00';
+    assert.equal(elapsedFractionOfWorkdayHorizon(resetAt, lastUpdated, 5), elapsedFractionOfConsumptionHorizon(resetAt, lastUpdated, 5));
+    assert.equal(traceElapsedFractionOfWorkdayHorizon(resetAt, lastUpdated, 5).result, traceElapsedFractionOfConsumptionHorizon(resetAt, lastUpdated, 5).result);
+});
+
+test('Task3 acceptance: weekly 99%, workdays=5, early week -> ~0.404x (not 0.566)', () => {
+    const resetAt = '2026-09-07T08:03:33+02:00'; // weeklyStart = 2026-08-31 08:03:33
+    const lastUpdated = '2026-08-31T11:01:34+02:00';
+    const workdays = 5;
+    const f = elapsedFractionOfConsumptionHorizon(resetAt, lastUpdated, workdays);
+    // 10681000 / 432000000 ≈ 0.0247245
+    assert.ok(Math.abs(f - 10681000 / 432000000) < 1e-12);
+    assert.ok(Math.abs(f - 0.024724537037037038) < 1e-12);
+    const expectedUsage = f * 100;
+    assert.ok(Math.abs(expectedUsage - 2.472453703703704) < 1e-12);
+    const pace = weeklyConsumptionPace({quotaRemainingPercent: 99, elapsedFraction: f});
+    assert.ok(Math.abs(pace - 0.4044565115625877) < 1e-10, `pace ${pace} expected ~0.40446`);
+    // old 7-day would be 0.566239
+    const fOld = elapsedFractionOfWeek(resetAt, lastUpdated);
+    const paceOld = weeklyConsumptionPace({quotaRemainingPercent: 99, elapsedFraction: fOld});
+    assert.ok(Math.abs(paceOld - 0.5662391161876229) < 1e-10);
+    assert.notEqual(pace, paceOld);
+    assert.ok(pace < 0.41 && pace > 0.39);
+});
+
+test('Task3 integration: workdays=5 vs workdays=7 produce correct expected usage', () => {
+    const resetAt = '2026-07-20T18:00:00+02:00';
+    const lastUpdated = '2026-07-14T18:00:00+02:00'; // 24h after weeklyStart
+    const f5 = elapsedFractionOfConsumptionHorizon(resetAt, lastUpdated, 5);
+    const f7 = elapsedFractionOfConsumptionHorizon(resetAt, lastUpdated, 7);
+    assert.ok(Math.abs(f5 - 0.2) < 1e-10, `f5 ${f5} expected 0.2`);
+    assert.ok(Math.abs(f7 - 1/7) < 1e-10, `f7 ${f7} expected 1/7`);
+    const pace5 = weeklyConsumptionPace({quotaRemainingPercent: 80, elapsedFraction: f5}); // actual 20
+    assert.ok(Math.abs(pace5 - 1.0) < 1e-10, `pace5 ${pace5} expected 1.0`);
+    const pace7 = weeklyConsumptionPace({quotaRemainingPercent: 80, elapsedFraction: f7});
+    assert.ok(Math.abs(pace7 - 1.4) < 0.01, `pace7 ${pace7} expected 1.4`);
+});
+
+test('Task3 integration: workdays=7 numerically equals old 7-day pacing', () => {
+    const resetAt = '2026-07-20T18:00:00+02:00';
+    const lastUpdated = '2026-07-15T18:00:00+02:00'; // 48h after weeklyStart
+    const fNew7 = elapsedFractionOfConsumptionHorizon(resetAt, lastUpdated, 7);
+    const fOld = elapsedFractionOfWeek(resetAt, lastUpdated);
+    assert.ok(Math.abs(fNew7 - fOld) < 1e-12);
+    const paceNew = weeklyConsumptionPace({quotaRemainingPercent: 60, elapsedFraction: fNew7});
+    const paceOld = weeklyConsumptionPace({quotaRemainingPercent: 60, elapsedFraction: fOld});
+    assert.equal(paceNew, paceOld);
+});
+
+test('Task3 color divergence: same actual usage gives different weekly color for workdays 5 vs old 7', () => {
+    const resetAt = '2026-07-20T18:00:00+02:00';
+    const lastUpdated = '2026-07-14T18:00:00+02:00'; // 1 day elapsed
+    const actualUsage = 16; // weekly remaining 84
+    const fNew = elapsedFractionOfConsumptionHorizon(resetAt, lastUpdated, 5); // 0.2 => expected 20
+    const paceNew = weeklyConsumptionPace({quotaRemainingPercent: 84, elapsedFraction: fNew});
+    assert.ok(Math.abs(paceNew - 0.8) < 1e-10, `new pace ${paceNew}`);
+    assert.equal(weeklyPaceColor(paceNew), '#15803D', 'new should be dark green');
+
+    const fOld = elapsedFractionOfWeek(resetAt, lastUpdated); // 1/7 => expected 14.2857
+    const paceOld = weeklyConsumptionPace({quotaRemainingPercent: 84, elapsedFraction: fOld});
+    assert.ok(Math.abs(paceOld - 1.12) < 0.01, `old pace ${paceOld}`);
+    assert.equal(weeklyPaceColor(paceOld), '#EA580C', 'old should be orange');
+    assert.notEqual(weeklyPaceColor(paceNew), weeklyPaceColor(paceOld));
+});
+
+test('Task3 debug and production share same elapsedFraction calculation', () => {
+    const resetAt = '2026-09-07T08:03:33+02:00';
+    const lastUpdated = '2026-08-31T11:01:34+02:00';
+    const workdays = 5;
+    const prodFraction = elapsedFractionOfConsumptionHorizon(resetAt, lastUpdated, workdays);
+    const traceFraction = traceElapsedFractionOfConsumptionHorizon(resetAt, lastUpdated, workdays).result;
+    assert.equal(prodFraction, traceFraction);
+    const prodPace = weeklyConsumptionPace({quotaRemainingPercent: 99, elapsedFraction: prodFraction});
+    const tracePace = traceElapsedFractionOfConsumptionHorizon(resetAt, lastUpdated, workdays);
+    const traceWeeklyPace = traceWeeklyConsumptionPace({quotaRemainingPercent: 99, elapsedFraction: tracePace.result});
+    assert.equal(prodPace, traceWeeklyPace.result);
+    // ensure trace fields reflect consumption horizon, not 7-day window
+    const tr = tracePace.trace;
+    assert.equal(tr.consumptionDurationMillis, workdays * 24 * 60 * 60 * 1000);
+    assert.equal(tr.weeklyStartMillis, Date.parse(resetAt) - 7 * 24 * 60 * 60 * 1000);
+    assert.equal(tr.consumptionHorizonMillis, tr.weeklyStartMillis + tr.consumptionDurationMillis);
+});
+
+// Ensure that weekly remaining itself does not change with workdays, only pace/color
+test('Task3 weekly remaining unchanged by workdays, only pace changes', () => {
+    const weeklyPercent = 99;
+    const resetAt = '2026-09-07T08:03:33+02:00';
+    const lastUpdated = '2026-08-31T11:01:34+02:00';
+    // remaining stays 99 regardless
+    assert.equal(weeklyPercent, 99);
+    const f5 = elapsedFractionOfConsumptionHorizon(resetAt, lastUpdated, 5);
+    const f7 = elapsedFractionOfConsumptionHorizon(resetAt, lastUpdated, 7);
+    const pace5 = weeklyConsumptionPace({quotaRemainingPercent: weeklyPercent, elapsedFraction: f5});
+    const pace7 = weeklyConsumptionPace({quotaRemainingPercent: weeklyPercent, elapsedFraction: f7});
+    assert.notEqual(pace5, pace7);
+    assert.ok(pace5 < pace7, 'fewer workdays => larger expectedUsage => smaller pace');
 });

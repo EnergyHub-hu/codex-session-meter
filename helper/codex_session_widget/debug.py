@@ -1021,6 +1021,16 @@ def _render_weekly(trace: dict, width: int | None = None, use_color: bool | None
     if et.get("lastUpdatedMillis") is not None:
         for part in _fmt_millis_compact(et.get('lastUpdatedMillis'), width - 2):
             _emit(lines, f"  epoch: {part}", width)
+    # Show configured workdays explicitly in weekly block (required by task)
+    weekly_workdays_val = inp.get("weeklyWorkdays")
+    if weekly_workdays_val is None:
+        # fallback to _meta
+        try:
+            weekly_workdays_val = trace.get("_meta", {}).get("weeklyWorkdays")
+        except Exception:
+            weekly_workdays_val = None
+    if weekly_workdays_val is not None:
+        _emit(lines, f"Configured workdays: {weekly_workdays_val}", width)
 
     if compact:
         lines.append("")
@@ -1057,38 +1067,71 @@ def _render_weekly(trace: dict, width: int | None = None, use_color: bool | None
         _emit(lines, f"Widget panel: {remaining.get('rounded') if remaining.get('rounded') is not None else 'n/a'}%", width)
 
     lines.append("")
-    lines.append(_c("PACE SZÁMÍTÁS  —  weeklyConsumptionPace() / elapsedFractionOfWeek()", ANSI_BOLD, use_color=use_color))
+    lines.append(_c("PACE SZÁMÍTÁS  —  weeklyConsumptionPace() / elapsedFractionOfConsumptionHorizon()", ANSI_BOLD, use_color=use_color))
     lines.append(_hr(min(62, width), "─", use_color=use_color))
     _emit(lines, "Heti pace = actualUsage / expectedUsage", width)
     _emit(lines, "  actualUsage   = 100 − weeklyPercent", width)
-    _emit(lines, "  expectedUsage = elapsedFractionOfWeek × 100", width)
-    _emit(lines, "  elapsedFractionOfWeek = elapsedMillis / (7×DAY)  [7 napos ablak]", width)
+    _emit(lines, "  expectedUsage = elapsedFractionOfConsumptionHorizon × 100", width)
+    _emit(lines, "  elapsedFractionOfConsumptionHorizon = elapsedMillis / (workdays×DAY)  [fogyasztási horizont]", width)
     lines.append("")
     if et.get("isResetFinite") is False or et.get("isLastUpdatedFinite") is False:
         _emit(lines, "elapsedFraction: n/a (érvénytelen timestamp)", width)
         _emit(lines, f"  resetAtMillis finite={et.get('isResetFinite')}, lastUpdatedMillis finite={et.get('isLastUpdatedFinite')}", width)
+        if et.get("isWorkdaysValid") is False:
+            _emit(lines, f"  workdays valid={et.get('isWorkdaysValid')} (workdays={et.get('workdays')})", width)
+    elif et.get("isWorkdaysValid") is False:
+        _emit(lines, "elapsedFraction: n/a (érvénytelen workdays)", width)
+        _emit(lines, f"  workdays={et.get('workdays')}, valid={et.get('isWorkdaysValid')}", width)
     elif elapsed.get("result") is None:
         _emit(lines, "elapsedFraction: n/a", width)
         if et.get("reason"):
             _emit(lines, f"  ok: {et.get('reason')}", width)
     else:
-        _emit(lines, "elapsedFraction számítás (elapsedFractionOfWeek):", width)
+        _emit(lines, "elapsedFraction számítás (elapsedFractionOfConsumptionHorizon):", width)
         _emit(lines, f"  resetAtMillis: {et.get('resetAtMillis')}  ({_fmt_millis(et.get('resetAtMillis'))})", width, subsequent_indent="    ")
-        # split long millis lines for narrow
-        ws_line = f"  windowStart = reset − 7 nap = {et.get('windowStartMillis')} ms"
-        _emit(lines, ws_line, width, subsequent_indent="    ")
-        for part in _fmt_millis_compact(et.get('windowStartMillis'), width - 4):
-            if part not in ws_line:
+        # weeklyStart and consumption window — use new trace fields, fallback to old windowStart for compat
+        weekly_start = et.get('weeklyStartMillis')
+        if weekly_start is None:
+            weekly_start = et.get('windowStartMillis')
+        _emit(lines, f"  weeklyStart = reset − 7 nap = {weekly_start} ms", width, subsequent_indent="    ")
+        if weekly_start is not None:
+            for part in _fmt_millis_compact(weekly_start, width - 4):
                 _emit(lines, f"    {part}", width)
-        _emit(lines, f"  elapsedMillis = max(0, lastUpdated − windowStart) = {et.get('elapsedMillis')} ms", width, subsequent_indent="    ")
+        # consumptionDuration
+        cons_dur = et.get('consumptionDurationMillis')
+        wd = et.get('workdays')
+        if wd is None:
+            wd = inp.get('weeklyWorkdays')
+            if wd is None:
+                try:
+                    wd = trace.get("_meta", {}).get("weeklyWorkdays")
+                except Exception:
+                    wd = "?"
+        if cons_dur is not None:
+            _emit(lines, f"  consumptionDuration: {wd} × 86400000 = {cons_dur} ms", width, subsequent_indent="    ")
+        else:
+            # fallback old field
+            _emit(lines, f"  weekMillis = 7 × 86400000 = {et.get('weekMillis')} ms", width)
+        # consumptionHorizon
+        cons_hor = et.get('consumptionHorizonMillis')
+        if cons_hor is not None and weekly_start is not None and cons_dur is not None:
+            _emit(lines, f"  consumptionHorizon: weeklyStart + consumptionDuration = {weekly_start} + {cons_dur} = {cons_hor} ms", width, subsequent_indent="    ")
+            for part in _fmt_millis_compact(cons_hor, width - 4):
+                _emit(lines, f"    {part}", width)
+        _emit(lines, f"  elapsedMillis: lastUpdated − weeklyStart = max(0, {et.get('lastUpdatedMillis')} − {weekly_start}) = {et.get('elapsedMillis')} ms", width, subsequent_indent="    ")
         if isinstance(et.get('elapsedMillis'), (int, float)):
             hrs = et.get('elapsedMillis') / 3600000
             days = et.get('elapsedMillis') / 86400000
             _emit(lines, f"    = {_fmt_number(hrs, 2)} h  ({_fmt_number(days, 4)} nap)", width)
-        _emit(lines, f"  weekMillis = 7 × 86400000 = {et.get('weekMillis')} ms", width)
-        _emit(lines, f"  rawFraction = elapsed / weekMillis = {_fmt_number(et.get('rawFraction'), 6)}", width, subsequent_indent="    ")
-        _emit(lines, f"  clamped [0,1] = min(1, raw) = {_fmt_number(et.get('clampedFraction'), 6)}", width, subsequent_indent="    ")
+        if cons_dur is not None:
+            _emit(lines, f"  rawFraction: elapsedMillis / consumptionDuration = {et.get('elapsedMillis')} / {cons_dur} = {_fmt_number(et.get('rawFraction'), 6)}", width, subsequent_indent="    ")
+        else:
+            _emit(lines, f"  rawFraction = elapsed / weekMillis = {_fmt_number(et.get('rawFraction'), 6)}", width, subsequent_indent="    ")
+        _emit(lines, f"  clamped fraction: min(1, max(0, raw)) = {_fmt_number(et.get('clampedFraction'), 6)}", width, subsequent_indent="    ")
         _emit(lines, f"  Final elapsedFraction: {_fmt_number(elapsed.get('result'), 6)}  ({_fmt_percent(elapsed.get('result') * 100 if isinstance(elapsed.get('result'), (int,float)) else None, 2)})", width, subsequent_indent="    ")
+        # expose the new debug-required lines explicitly for testability
+        if cons_dur is not None:
+            _emit(lines, f"  clamped fraction: {elapsed.get('result')}", width)
         lines.append("")
         if pace.get("result") is None:
             _emit(lines, "weeklyConsumptionPace: n/a", width)
@@ -1109,7 +1152,7 @@ def _render_weekly(trace: dict, width: int | None = None, use_color: bool | None
             if isinstance(pace.get("result"), float) and math.isinf(pace.get("result")):
                 _emit(lines, "  ∞ = végtelen: a hét elején már fogyott a keret", width)
             else:
-                _emit(lines, "  1.00 = terv szerinti ütem (7 napos ablak)", width)
+                _emit(lines, "  1.00 = terv szerinti ütem (fogyasztási horizont)", width)
                 _emit(lines, "  <1.00 = lassabb a tervnél", width)
                 _emit(lines, "  >1.00 = gyorsabb a tervnél", width)
 
