@@ -59,11 +59,12 @@ codex-session-meter login
 codex-session-meter logout
 codex-session-meter auth-status
 codex-session-meter open-logs
+codex-session-meter debug [--no-color] [--width WIDTH] [--copy]
 ```
 
 `login` delegates to `codex login`. The widget reads the Codex CLI auth status and calls the Codex CLI app-server API; it does not use browser scraping.
 
-The Python helper uses semantic versioning, currently `0.2.1`. The GNOME Shell `metadata.json` `version` field is a separate integer extension package version.
+The Python helper uses semantic versioning, currently `0.3.4`. The GNOME Shell `metadata.json` `version` field is a separate integer extension package version.
 
 ## Configuration
 

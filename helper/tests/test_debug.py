@@ -1459,4 +1459,3 @@ def test_task8_payload_golden():
     assert tr2["daily"]["color"]["result"] is not None
     # ensure daily color input is remaining, weekly is pace
     assert tr2["daily"]["color"]["result"] != tr2["weekly"]["paceColor"]["effective"] or True  # at least both exist
-

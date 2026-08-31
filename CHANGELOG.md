@@ -7,6 +7,8 @@ A formátum a [Keep a Changelog](https://keepachangelog.com/hu/1.1.0/) alapján 
 
 ## [Unreleased]
 
+## [v0.3.4] - 2026-08-31
+
 ### Új funkciók
 
 - **Pace megjelenítési mód**: új `display_mode` beállítás `pace` és `absolute` értékekkel.
@@ -19,6 +21,8 @@ A formátum a [Keep a Changelog](https://keepachangelog.com/hu/1.1.0/) alapján 
 - **Pace normalizáció és szín-interpoláció**: a pace értékek normalizálása és színekkel való megjelenítése.
 - **Elapsed workdays**: a `startedWorkdays` mező lecserélve `elapsedWorkdays`-re a proporciónális időkövetéshez.
 - **AGENTS.md fájlok**: új útmutató fájlok a repository, helper és extension könyvtárakhoz.
+- **Debug CLI**: a `codex-session-meter debug` diagnosztikai nézetet biztosít
+  `--no-color`, `--width` és `--copy` opciókkal.
 
 ### Refaktorálás
 

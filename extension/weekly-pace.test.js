@@ -2992,5 +2992,3 @@ test('Task8 local timestamp DST sanity: spring 23h autumn 25h distinct', () => {
     assertClose((spring1 - spring0) / (60*60*1000), 23, 0.01);
     assertClose((fall1 - fall0) / (60*60*1000), 25, 0.01);
 });
-
-
