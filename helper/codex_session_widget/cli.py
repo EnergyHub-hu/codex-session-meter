@@ -48,6 +48,7 @@ def main(argv: list[str] | None = None) -> int:
     debug_parser = subparsers.add_parser("debug")
     debug_parser.add_argument("--no-color", action="store_true", help="Disable ANSI colors (also respects NO_COLOR env)")
     debug_parser.add_argument("--width", type=int, default=None, help="Explicit width in columns (60-160, default: auto via terminal/COLUMNS)")
+    debug_parser.add_argument("--copy", "--to-clipboard", dest="copy", action="store_true", help="Render full output to clipboard without showing it")
 
     args = parser.parse_args(argv)
 
@@ -99,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "debug":
         from .debug import run_debug
 
-        return run_debug(no_color=getattr(args, "no_color", False), width=getattr(args, "width", None))
+        return run_debug(no_color=getattr(args, "no_color", False), width=getattr(args, "width", None), copy=getattr(args, "copy", False))
 
     return 2
 

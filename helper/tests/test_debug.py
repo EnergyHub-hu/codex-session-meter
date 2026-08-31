@@ -435,7 +435,7 @@ def test_r_triggers_refresh(monkeypatch):
 
 
 def test_auto_refresh_after_60(monkeypatch):
-    """Auto-refresh fires after 60s (mocked time)."""
+    """No auto-refresh after 60s — manual R only (60s feature removed)."""
     from codex_session_widget import debug as debug_mod
 
     payload = _sample_payload()
@@ -451,7 +451,7 @@ def test_auto_refresh_after_60(monkeypatch):
     monkeypatch.setattr("codex_session_widget.debug._exit_raw_mode", lambda old: None)
     monkeypatch.setattr("codex_session_widget.debug._clear_screen", lambda: None)
 
-    # Control both datetime.now() and time.time() so deadline expires
+    # Control both datetime.now() and time.time() so deadline would have expired previously
     import datetime as dt_mod
 
     class FakeDatetime:
@@ -469,27 +469,20 @@ def test_auto_refresh_after_60(monkeypatch):
         def fromisoformat(cls, s):
             return dt_mod.datetime.fromisoformat(s)
 
-    # Patch debug's datetime to control refresh_time and next_time
-    orig_dt = debug_mod.datetime
     monkeypatch.setattr(debug_mod, "datetime", FakeDatetime)
-    # Also need to advance FakeDatetime._now after first loop
     select_calls = [0]
 
     def fake_select(rlist, wlist, xlist, timeout=0):
         select_calls[0] += 1
         if select_calls[0] == 1:
-            # No key, let loop check deadline (still not expired)
             return ([], [], [])
         elif select_calls[0] == 2:
-            # Advance clock past 60s
             FakeDatetime._now = dt_mod.datetime.fromtimestamp(1070.0, tz=dt_mod.timezone.utc)
-            # Also need time.time to reflect same for deadline check
             return ([], [], [])
         else:
             return ([MagicMock()], [], [])
 
     monkeypatch.setattr("select.select", fake_select)
-    # time.time should track FakeDatetime._now
     monkeypatch.setattr("time.time", lambda: FakeDatetime._now.timestamp())
 
     reads = iter(["q"])
@@ -497,8 +490,8 @@ def test_auto_refresh_after_60(monkeypatch):
 
     rc = debug_mod.run_debug()
     assert rc == 0
-    # Initial + auto refresh = 2
-    assert refresh_count[0] == 2
+    # No auto refresh — only initial
+    assert refresh_count[0] == 1
 
 
 # ---------------------------------------------------------------------------

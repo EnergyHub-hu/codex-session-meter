@@ -63,6 +63,41 @@ def _term_width(fallback: int = 100, explicit: int | None = None) -> int:
     # clamp to avoid extreme values
     return max(60, min(160, int(w)))
 
+
+def _term_height(fallback: int = 24, explicit: int | None = None) -> int:
+    if explicit is not None:
+        try:
+            return max(10, min(100, int(explicit)))
+        except Exception:
+            pass
+    lines_env = os.environ.get("LINES")
+    if lines_env is not None:
+        try:
+            # Prefer actual tty size over stale LINES when isatty
+            pass
+        except Exception:
+            pass
+    try:
+        h = shutil.get_terminal_size((100, fallback)).lines
+        if sys.stdout.isatty() and h != fallback:
+            return max(10, min(100, int(h)))
+    except Exception:
+        pass
+    if lines_env is not None:
+        try:
+            return max(10, min(100, int(lines_env)))
+        except Exception:
+            pass
+    try:
+        h = shutil.get_terminal_size((100, fallback)).lines
+    except Exception:
+        h = fallback
+    return max(10, min(100, int(h)))
+
+
+def _term_size(fallback_w: int = 100, fallback_h: int = 24) -> tuple[int, int]:
+    return _term_width(fallback_w), _term_height(fallback_h)
+
 def _supports_color(no_color_flag: bool = False) -> bool:
     if no_color_flag:
         return False
@@ -158,10 +193,48 @@ def _kv(label: str, value: str, width: int, use_color: bool = False, label_width
 
 def _extension_dir() -> Path:
     # helper/codex_session_widget/debug.py -> repo root -> extension/
+    # Kept for backwards compatibility; prefer _debug_calc_script() which
+    # searches installed location as well.
     return Path(__file__).resolve().parents[2] / "extension"
 
 def _debug_calc_script() -> Path:
-    return _extension_dir() / "debug-calc.js"
+    candidates = [
+        Path(__file__).resolve().parents[2] / "extension" / "debug-calc.js",
+        Path.home() / ".local" / "share" / "gnome-shell" / "extensions" / "codex-session-meter@local" / "debug-calc.js",
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    # No candidate exists — return the installed location so the error
+    # message points at the expected deployed path, not the venv internals.
+    return candidates[1]
+
+def _copy_to_clipboard(text: str) -> bool:
+    """Copy text to clipboard via wl-copy / xclip / xsel / pbcopy. Returns True on success."""
+    candidates = [
+        (["wl-copy"], {}),
+        (["xclip", "-selection", "clipboard"], {}),
+        (["xsel", "--clipboard", "--input"], {}),
+        (["pbcopy"], {}),
+    ]
+    for argv, _ in candidates:
+        prog = argv[0]
+        if shutil.which(prog) is None:
+            continue
+        try:
+            proc = subprocess.run(
+                argv,
+                input=text.encode("utf-8"),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+            )
+            if proc.returncode == 0:
+                return True
+        except (OSError, subprocess.SubprocessError):
+            continue
+    return False
+
 
 def _decode_trace_json(text: str) -> dict:
     def _hook(obj: Any) -> Any:
@@ -283,7 +356,7 @@ def _safe(v: Any) -> str:
 # Rendering
 # ---------------------------------------------------------------------------
 
-def _render_header(payload: dict, trace: dict, refresh_time: datetime, reason: str, next_time: datetime, width: int | None = None, use_color: bool | None = None) -> str:
+def _render_header(payload: dict, trace: dict, refresh_time: datetime, reason: str, next_time: datetime | None = None, width: int | None = None, use_color: bool | None = None) -> str:
     if width is None:
         width = _term_width()
     if use_color is None:
@@ -343,9 +416,16 @@ def _render_header(payload: dict, trace: dict, refresh_time: datetime, reason: s
 
     kv_line("Frissítés", refresh_time.isoformat(timespec="seconds"))
     kv_line("Frissítés oka", reason)
-    kv_line("Következő", f"{next_time.strftime('%H:%M:%S')}  (60 s)")
     kv_line("Adatforrás", source_label)
     kv_line("Állapot", f"{data_status}  (status: {status})", value_colored=f"{data_status_colored}  {_c(f'(status: {status})', ANSI_DIM, use_color=use_color)}")
+    # Show fallback reason if we used cached due to empty live (helps when widget works but debug shows n/a)
+    fb_reason = trace.get("_meta", {}).get("fallbackReason")
+    if fb_reason:
+        for w in _wrap_text(f"Megjegyzés: {fb_reason} – widgettel azonos cached adat", width, subsequent_indent="  "):
+            if w.startswith("Megjegyzés:"):
+                lines.append(_c("Megjegyzés:", ANSI_YELLOW, use_color=use_color) + w[len("Megjegyzés:"):])
+            else:
+                lines.append(w)
     if not ok:
         msg = payload.get("message") or ""
         if msg:
@@ -384,6 +464,26 @@ def _render_header(payload: dict, trace: dict, refresh_time: datetime, reason: s
             pass
     kv_line("Terminál", f"{width} oszlop{term_src}" + (f"  {_c('✓', ANSI_GREEN, use_color=use_color)}" if 78 <= width <= 120 else ""))
     kv_line("Színek", "be" if use_color else "ki  (NO_COLOR=1 tiltja)")
+    # Tartalom: which windows have data – clarifies "nincs adat" vs widget OK
+    try:
+        s_pct = trace.get("session", {}).get("input", {}).get("sessionPercent")
+        d_rem = trace.get("daily", {}).get("remaining", {}).get("result")
+        w_pct = trace.get("weekly", {}).get("input", {}).get("weeklyPercent")
+        has_s = isinstance(s_pct, (int, float))
+        has_d = isinstance(d_rem, (int, float))
+        has_w = isinstance(w_pct, (int, float))
+        tartalom = f"heti {'✓' if has_w else '✗'}  napi {'✓' if has_d else '✗'}  session {'✓' if has_s else '✗'}"
+        # color the checks
+        if use_color:
+            tartalom_c = tartalom.replace("✓", _c("✓", ANSI_GREEN, use_color=use_color)).replace("✗", _c("✗", ANSI_DIM, use_color=use_color))
+            kv_line("Tartalom", tartalom, value_colored=tartalom_c)
+        else:
+            kv_line("Tartalom", tartalom)
+        # If widget shows data but session missing, explicitly state
+        if has_w and not has_s:
+            _emit(lines, _c("  → a widget ilyenkor heti/napi adatot mutat, session pont rejtve", ANSI_DIM, use_color=use_color), width, subsequent_indent="     ")
+    except Exception:
+        pass
     lines.append("")
     # Help line with reverse – wrap for narrow zsh windows
     help_plain = "[R] frissítés most    [Q] kilépés"
@@ -413,7 +513,7 @@ def _render_header(payload: dict, trace: dict, refresh_time: datetime, reason: s
     return "\n".join(lines)
 
 
-def _render_session(trace: dict, width: int | None = None, use_color: bool | None = None) -> str:
+def _render_session(trace: dict, width: int | None = None, use_color: bool | None = None, compact: bool = False) -> str:
     if width is None:
         width = _term_width()
     if use_color is None:
@@ -431,6 +531,21 @@ def _render_session(trace: dict, width: int | None = None, use_color: bool | Non
     session_reset_at = inp.get("sessionResetAt")
     session_window_mins = inp.get("sessionWindowMins")
     last_updated = inp.get("lastUpdated")
+
+    # A+C compact: minimal view that fits one screen
+    has_valid_early = pt.get("isSessionPercentFinite") and pt.get("isWindowValid") and pt.get("isResetFinite") and pt.get("isLastUpdatedFinite")
+    if compact:
+        lines: list[str] = []
+        lines.append(_c("1. 5 ÓRÁS SESSION", ANSI_BOLD, ANSI_WHITE, use_color=use_color))
+        lines.append(_c("═" * min(18, width), ANSI_DIM, use_color=use_color))
+        if not has_valid_early and session_percent is None:
+            _emit(lines, "  n/a  (nincs session – heti/napi lentebb OK)", width)
+            _emit(lines, _c("  [c] részletes  [1] ugrás  [j/k] görget", ANSI_DIM, use_color=use_color), width)
+        else:
+            rem = remaining.get('raw') if remaining.get('raw') is not None else session_percent
+            _emit(lines, f"  {_fmt_percent(rem,2)} remaining  │  pace {_fmt_number(pace.get('result'),2) if pace.get('result') is not None else 'n/a'}  │  {_fmt_color(pcolor.get('effective'))}", width)
+            _emit(lines, _c("  [c] részletes  [1] ugrás", ANSI_DIM, use_color=use_color), width)
+        return "\n".join(lines)
 
     lines: list[str] = []
     lines.append(_c("1. 5 ÓRÁS SESSION", ANSI_BOLD, ANSI_WHITE, use_color=use_color))
@@ -464,18 +579,19 @@ def _render_session(trace: dict, width: int | None = None, use_color: bool | Non
         lines.append("")
         lines.append(_c("REMAINING % SZÁMÍTÁS", ANSI_BOLD, use_color=use_color))
         lines.append(_hr(min(28, width), "─", use_color=use_color))
-        # Friendly box
+        # Friendly box – clarified: session optional, widget still works for weekly/daily
         box_w = min(width, 72)
         lines.append(_c("┌" + "─" * (box_w - 2) + "┐", ANSI_YELLOW, use_color=use_color))
         msg1 = " Session adat nem elérhető (session_percent = n/a). "
-        msg2 = " A widget ebben az állapotban nem jelenít meg session értéket. "
-        # center within box
-        for m in [msg1, msg2]:
+        msg2 = " Ez normális, ha a Codex API most csak heti keretet adott. "
+        msg3 = " A widget ilyenkor a session pontot rejti, de a heti/napi "
+        msg4 = " keret lentebb továbbra is LIVE és görgethető (j/k, PgDn). "
+        for m in [msg1, msg2, msg3, msg4]:
             padded = m.ljust(box_w - 2)
             lines.append(_c("│", ANSI_YELLOW, use_color=use_color) + padded + _c("│", ANSI_YELLOW, use_color=use_color))
         lines.append(_c("└" + "─" * (box_w - 2) + "┘", ANSI_YELLOW, use_color=use_color))
         # hint
-        _emit(lines, _c("Tipp:", ANSI_BOLD, use_color=use_color) + " a Codex CLI API most nem adott 5 órás ablakot — ez normális, ha nincs aktív session. Próbáld: " + _c("codex app-server --stdio", ANSI_DIM, use_color=use_color), width)
+        _emit(lines, _c("Tipp:", ANSI_BOLD, use_color=use_color) + " görgess le [j/k] a heti/napi részhez, vagy [c] kompakt nézet. Ellenőrzés: " + _c("codex app-server --stdio → account/rateLimits/read", ANSI_DIM, use_color=use_color), width)
         lines.append("")
         lines.append(_c("PACE SZÁMÍTÁS", ANSI_BOLD, use_color=use_color))
         lines.append(_hr(min(24, width), "─", use_color=use_color))
@@ -496,6 +612,21 @@ def _render_session(trace: dict, width: int | None = None, use_color: bool | Non
         fallback = pcolor.get('fallback', {}).get('result') if isinstance(pcolor.get('fallback'), dict) else pcolor.get('effective')
         _emit(lines, f"Color (fallback, limitIndicatorColor): {_fmt_color(fallback)}", width)
         _emit(lines, f"Effective dot color: {_fmt_color(pcolor.get('effective'))}", width)
+        return "\n".join(lines)
+
+    # Compact mode (A+C): short view that fits screen
+    if compact:
+        lines.append("")
+        lines.append(_c("REMAINING / PACE (kompakt)", ANSI_BOLD, use_color=use_color))
+        lines.append(_hr(min(28, width), "─", use_color=use_color))
+        rem_val = remaining.get('raw') if remaining.get('raw') is not None else session_percent
+        _emit(lines, f"Remaining: {_fmt_percent(rem_val, 2)}  (kerekítve: {remaining.get('rounded') if remaining.get('rounded') is not None else 'n/a'}%)", width)
+        if pace.get("result") is not None:
+            _emit(lines, f"Pace: {_fmt_number(pace.get('result'), 2)}  (remaining − elapsedPct)", width)
+        else:
+            _emit(lines, f"Pace: n/a  ({'hiányzó bemenet' if not has_valid else 'null'})", width)
+        _emit(lines, f"Szín: {_fmt_color(pcolor.get('effective'))}  → {level.get('result', 'n/a')}", width)
+        _emit(lines, _c("Részletek: [c] teljes nézet, [1] ugrás", ANSI_DIM, use_color=use_color), width)
         return "\n".join(lines)
 
     lines.append("")
@@ -608,7 +739,7 @@ def _render_session(trace: dict, width: int | None = None, use_color: bool | Non
     return "\n".join(lines)
 
 
-def _render_daily(trace: dict, width: int | None = None, use_color: bool | None = None) -> str:
+def _render_daily(trace: dict, width: int | None = None, use_color: bool | None = None, compact: bool = False) -> str:
     if width is None:
         width = _term_width()
     if use_color is None:
@@ -629,6 +760,17 @@ def _render_daily(trace: dict, width: int | None = None, use_color: bool | None 
 
     daily_remaining = d.get("remaining", {}).get("result")
     wt = wpr_trace
+
+    if compact:
+        lines: list[str] = []
+        lines.append(_c("2. NAPI KERET", ANSI_BOLD, ANSI_WHITE, use_color=use_color))
+        lines.append(_c("═" * min(14, width), ANSI_DIM, use_color=use_color))
+        if wt.get("isIncomplete"):
+            _emit(lines, "  n/a  (hiányzó bemenet)", width)
+        else:
+            _emit(lines, f"  {_fmt_number(daily_remaining,2) if daily_remaining is not None else 'n/a'}% remaining  │  pace {_fmt_number(pace.get('result'),2) if pace.get('result') is not None else 'n/a'}×  │  {_fmt_color(pcolor.get('effective'))}", width)
+        _emit(lines, _c("  [c] részletes  [2] ugrás", ANSI_DIM, use_color=use_color), width)
+        return "\n".join(lines)
 
     lines: list[str] = []
     lines.append(_c("2. NAPI KERET", ANSI_BOLD, ANSI_WHITE, use_color=use_color))
@@ -664,6 +806,19 @@ def _render_daily(trace: dict, width: int | None = None, use_color: bool | None 
         lines.append(_hr(min(24, width), "─", use_color=use_color))
         _emit(lines, f"Indicator level: {level.get('result', 'n/a')}", width)
         _emit(lines, f"Effective color: {_fmt_color(pcolor.get('effective'))}", width)
+        return "\n".join(lines)
+
+    if compact:
+        lines.append("")
+        lines.append(_c("REMAINING / PACE (kompakt)", ANSI_BOLD, use_color=use_color))
+        lines.append(_hr(min(28, width), "─", use_color=use_color))
+        _emit(lines, f"Remaining: {_fmt_number(daily_remaining,4) if daily_remaining is not None else 'n/a'}%  (EOD-normalizált)", width)
+        if pace.get("result") is not None:
+            _emit(lines, f"Pace: {_fmt_number(pace.get('result'),4)}×  (actual/expected)", width)
+        else:
+            _emit(lines, f"Pace: n/a  ({(pace.get('trace') or {}).get('reason','hiányzó')})", width)
+        _emit(lines, f"Szín: {_fmt_color(pcolor.get('effective'))}  → {level.get('result','n/a')}", width)
+        _emit(lines, _c("Részletek: [c] teljes", ANSI_DIM, use_color=use_color), width)
         return "\n".join(lines)
 
     lines.append("")
@@ -815,7 +970,7 @@ def _render_daily(trace: dict, width: int | None = None, use_color: bool | None 
     return "\n".join(lines)
 
 
-def _render_weekly(trace: dict, width: int | None = None, use_color: bool | None = None) -> str:
+def _render_weekly(trace: dict, width: int | None = None, use_color: bool | None = None, compact: bool = False) -> str:
     if width is None:
         width = _term_width()
     if use_color is None:
@@ -836,6 +991,17 @@ def _render_weekly(trace: dict, width: int | None = None, use_color: bool | None
     et = elapsed.get("trace") or {}
     pt = pace.get("trace") or {}
 
+    if compact:
+        lines: list[str] = []
+        lines.append(_c("3. HETI KERET", ANSI_BOLD, ANSI_WHITE, use_color=use_color))
+        lines.append(_c("═" * min(14, width), ANSI_DIM, use_color=use_color))
+        if weekly_percent is None or not isinstance(weekly_percent, (int, float)):
+            _emit(lines, "  n/a  (hiányzó heti adat)", width)
+        else:
+            _emit(lines, f"  {_fmt_percent(remaining.get('raw'),2) if remaining.get('raw') is not None else 'n/a'} remaining  │  pace {_fmt_number(pace.get('result'),2) if pace.get('result') is not None else 'n/a'}×  │  {_fmt_color(pcolor.get('effective'))}", width)
+        _emit(lines, _c("  [c] részletes  [3] ugrás", ANSI_DIM, use_color=use_color), width)
+        return "\n".join(lines)
+
     lines: list[str] = []
     lines.append(_c("3. HETI KERET", ANSI_BOLD, ANSI_WHITE, use_color=use_color))
     lines.append(_c("═" * min(14, width), ANSI_DIM, use_color=use_color))
@@ -855,6 +1021,22 @@ def _render_weekly(trace: dict, width: int | None = None, use_color: bool | None
     if et.get("lastUpdatedMillis") is not None:
         for part in _fmt_millis_compact(et.get('lastUpdatedMillis'), width - 2):
             _emit(lines, f"  epoch: {part}", width)
+
+    if compact:
+        lines.append("")
+        lines.append(_c("REMAINING / PACE (kompakt)", ANSI_BOLD, use_color=use_color))
+        lines.append(_hr(min(28, width), "─", use_color=use_color))
+        if weekly_percent is None or not isinstance(weekly_percent, (int, float)):
+            _emit(lines, "Weekly remaining: n/a", width)
+        else:
+            _emit(lines, f"Remaining: {_fmt_percent(remaining.get('raw'),2)}  (kerekítve: {remaining.get('rounded')}%)", width)
+        if pace.get("result") is not None:
+            _emit(lines, f"Pace: {_fmt_number(pace.get('result'),4)}×  (actual/expected)", width)
+        else:
+            _emit(lines, f"Pace: n/a  ({(pt.get('reason') or 'hiányzó')})", width)
+        _emit(lines, f"Szín: {_fmt_color(pcolor.get('effective'))}  → {level.get('result','n/a')}", width)
+        _emit(lines, _c("Részletek: [c] teljes", ANSI_DIM, use_color=use_color), width)
+        return "\n".join(lines)
 
     lines.append("")
     lines.append(_c("REMAINING % SZÁMÍTÁS", ANSI_BOLD, use_color=use_color))
@@ -1059,18 +1241,18 @@ def _render_summary(trace: dict, width: int | None = None, use_color: bool | Non
     return "\n".join(lines)
 
 
-def render_screen(payload: dict, trace: dict, refresh_time: datetime, reason: str, next_time: datetime, width: int | None = None, use_color: bool | None = None) -> str:
+def render_screen(payload: dict, trace: dict, refresh_time: datetime, reason: str, next_time: datetime, width: int | None = None, use_color: bool | None = None, compact: bool = False) -> str:
     if width is None:
         width = _term_width()
     if use_color is None:
         use_color = _supports_color()
     parts: list[str] = []
     parts.append(_render_header(payload, trace, refresh_time, reason, next_time, width=width, use_color=use_color))
-    parts.append(_render_session(trace, width=width, use_color=use_color))
+    parts.append(_render_session(trace, width=width, use_color=use_color, compact=compact))
     parts.append("")
-    parts.append(_render_daily(trace, width=width, use_color=use_color))
+    parts.append(_render_daily(trace, width=width, use_color=use_color, compact=compact))
     parts.append("")
-    parts.append(_render_weekly(trace, width=width, use_color=use_color))
+    parts.append(_render_weekly(trace, width=width, use_color=use_color, compact=compact))
     parts.append("")
     parts.append(_render_summary(trace, width=width, use_color=use_color))
     return "\n".join(parts)
@@ -1081,53 +1263,38 @@ def render_screen(payload: dict, trace: dict, refresh_time: datetime, reason: st
 # ---------------------------------------------------------------------------
 
 def _do_refresh() -> tuple[dict, dict]:
-    """Perform a live refresh and build trace. Returns (payload, trace)."""
+    """Perform a live refresh and build trace. Returns (payload, trace).
+
+    Debug must always show the live codex-cli value — no cache fallback.
+    The widget keeps last_success behaviour; debug does not.
+    """
     from .fetcher import refresh_status
+
     payload = refresh_status()
-    effective = payload
-    if not payload.get("ok") and payload.get("last_success"):
-        effective = {**payload["last_success"], "ok": payload["ok"], "status": payload["status"], "message": payload.get("message"), "last_success": payload["last_success"], "source_label": payload.get("source_label")}
-        trace_payload = {**payload["last_success"]}
-        trace_payload["_freshness_ok"] = payload["ok"]
-        trace_payload["_freshness_status"] = payload["status"]
-        trace = get_trace(trace_payload)
-        if "_meta" in trace:
-            trace["_meta"]["ok"] = payload["ok"]
-            trace["_meta"]["status"] = payload["status"]
-            trace["_meta"]["isStale"] = True
-            trace["_meta"]["hasLastSuccess"] = True
-        return payload, trace
-    trace = get_trace(effective)
+    trace = get_trace(payload)
     return payload, trace
 
+
 def _clear_screen(*args, **kwargs) -> None:
-    # Accept any args for test compatibility (tests mock with lambda: None)
+    # A+C: no alternate screen – keep native scrollback so user can scroll
+    # Keep compatibility with mocked tests (lambda: None)
+    # Always use normal buffer; clear screen from cursor to end and home
+    # \033[H moves home, \033[J clears from cursor to end of screen (preserves scrollback)
+    # Fallback to \033[H\033[2J for full clear if terminal doesn't support J
     try:
-        use_alt = sys.stdout.isatty() and sys.stdin.isatty()
+        # If caller forced alt-screen via flag (not used now), ignore to keep scrollable
+        pass
     except Exception:
-        use_alt = False
-    # If caller explicitly forced via kwargs, honor it
-    if "use_alt" in kwargs:
-        use_alt = bool(kwargs["use_alt"])
-    elif args and isinstance(args[0], bool):
-        use_alt = bool(args[0])
-    if use_alt:
-        sys.stdout.write("\033[?1049h\033[H")
-    else:
-        sys.stdout.write("\033[H\033[2J")
+        pass
+    sys.stdout.write("\033[H\033[J")
     sys.stdout.flush()
 
 def _restore_screen(*args, **kwargs) -> None:
+    # No alternate screen to restore in scrollable mode – no-op for compatibility
     try:
-        use_alt = sys.stdout.isatty() and sys.stdin.isatty()
+        pass
     except Exception:
-        use_alt = False
-    if "use_alt" in kwargs:
-        use_alt = bool(kwargs["use_alt"])
-    elif args and isinstance(args[0], bool):
-        use_alt = bool(args[0])
-    if use_alt:
-        sys.stdout.write("\033[?1049l")
+        pass
     sys.stdout.flush()
 
 def _enter_raw_mode() -> Any:
@@ -1152,14 +1319,15 @@ def _exit_raw_mode(old: Any) -> None:
     except Exception:
         pass
 
-def run_debug(no_color: bool = False, width: int | None = None) -> int:
+def run_debug(no_color: bool = False, width: int | None = None, copy: bool = False) -> int:
     """Entry point for `codex-session-meter debug`."""
     import select
     import signal
 
     # Resolve color once, but respect NO_COLOR
     use_color = _supports_color(no_color_flag=no_color)
-    use_alt = sys.stdout.isatty() and sys.stdin.isatty()
+    # A: no alt-screen – keep native scrollback (user can scroll with mouse/shift-pgup)
+    use_alt = False
     # Validate explicit width (clamped in _term_width)
     explicit_width: int | None = None
     if width is not None:
@@ -1178,6 +1346,18 @@ def run_debug(no_color: bool = False, width: int | None = None) -> int:
 
     next_time = datetime.fromtimestamp(refresh_time.timestamp() + DEBUG_INTERVAL_SECONDS).astimezone()
 
+    # --copy / --to-clipboard: render once, copy to clipboard, no interactive UI
+    if copy:
+        w = _term_width(explicit=explicit_width) if explicit_width is not None else _term_width()
+        screen = render_screen(payload, trace, refresh_time, reason, next_time, width=w, use_color=False, compact=False)
+        if _copy_to_clipboard(screen):
+            print("Számítások vágólapra másolva.")
+            return 0
+        # fallback: clipboard tool missing — print screen and warn
+        print("Vágólap eszköz nem található (wl-copy / xclip / xsel). Kimenet stdout-ra írva.", file=sys.stderr)
+        print(screen)
+        return 1
+
     is_tty = sys.stdin.isatty()
 
     # track resize
@@ -1191,13 +1371,183 @@ def run_debug(no_color: bool = False, width: int | None = None) -> int:
 
     # old_term will be set later; draw checks it for raw-mode newline handling (zsh fix)
     old_term_holder: dict[str, Any] = {"old": None}
+    # A+C: viewport + compact (flagnélkül) – belső állapot
+    state: dict[str, Any] = {"offset": 0, "compact": False, "lines": [], "section_offsets": {}}
+
+    def _build_lines() -> None:
+        w = _term_width(explicit=explicit_width) if explicit_width is not None else _term_width()
+        screen = render_screen(payload, trace, refresh_time, reason, next_time, width=w, use_color=use_color, compact=state["compact"])
+        lines = screen.splitlines()
+        state["lines"] = lines
+        # section offsets for 1/2/3 jump
+        offs: dict[str, int] = {}
+        for idx, ln in enumerate(lines):
+            plain = _strip_ansi(ln)
+            if "1. 5 ÓRÁS SESSION" in plain:
+                offs["1"] = idx
+            elif "2. NAPI KERET" in plain:
+                offs["2"] = idx
+            elif "3. HETI KERET" in plain:
+                offs["3"] = idx
+            elif "ÖSSZEFOGLALÓ" in plain:
+                offs["0"] = idx
+                offs["s"] = idx
+        state["section_offsets"] = offs
+        # clamp offset
+        h = _term_height()
+        visible = max(5, h - 2)
+        max_off = max(0, len(lines) - visible)
+        if state["offset"] > max_off:
+            state["offset"] = max_off
+
+    def _read_key() -> str:
+        # Robust arrow handling for zsh/gnome-terminal:
+        # Prefer raw fd (os.read) so escape sequences arrive atomically.
+        # Tests mock sys.stdin.read, so try that first and fall back to fd.
+        try:
+            ch = ""
+            # Try mocked sys.stdin.read first (tests)
+            try:
+                ch = sys.stdin.read(1)
+            except Exception:
+                ch = ""
+            # If mocked read returned empty (real tty), use raw fd
+            if not ch:
+                try:
+                    fd = sys.stdin.fileno()
+                    data = os.read(fd, 32)
+                    if not data:
+                        return ""
+                    ch = data.decode("utf-8", errors="replace")
+                except Exception:
+                    return ""
+            # Already a multi-char escape (os.read returned "\x1b[A" at once)
+            if len(ch) > 1 and ch.startswith("\x1b"):
+                # Normalize: strip trailing \r\n that zsh may append
+                c = ch.strip("\r\n")
+                # Return canonical form for arrow detection
+                if c.startswith("\x1b[A") or c.startswith("\x1bOA"):
+                    return "\x1b[A"
+                if c.startswith("\x1b[B") or c.startswith("\x1bOB"):
+                    return "\x1b[B"
+                if c.startswith("\x1b[C") or c.startswith("\x1bOC"):
+                    return "\x1b[C"
+                if c.startswith("\x1b[D") or c.startswith("\x1bOD"):
+                    return "\x1b[D"
+                if c.startswith("\x1b[5~"):
+                    return "\x1b[5~"
+                if c.startswith("\x1b[6~"):
+                    return "\x1b[6~"
+                return c
+            if ch == "\x1b":
+                seq = ch
+                # Read remaining bytes of the escape sequence via fd
+                try:
+                    fd = sys.stdin.fileno()
+                    for _ in range(6):
+                        r, _, _ = select.select([sys.stdin], [], [], 0.08)
+                        if not r:
+                            # Also try fd directly if select on sys.stdin didn't fire (zsh raw)
+                            try:
+                                r2, _, _ = select.select([fd], [], [], 0.02)
+                                if not r2:
+                                    break
+                            except Exception:
+                                break
+                        # Prefer fd read for remaining bytes
+                        try:
+                            more = os.read(fd, 16)
+                            if more:
+                                seq += more.decode("utf-8", errors="replace")
+                            else:
+                                nxt = ""
+                                try:
+                                    nxt = sys.stdin.read(1)
+                                except Exception:
+                                    nxt = ""
+                                if nxt:
+                                    seq += nxt
+                                else:
+                                    break
+                        except Exception:
+                            try:
+                                nxt = sys.stdin.read(1)
+                                if nxt:
+                                    seq += nxt
+                                else:
+                                    break
+                            except Exception:
+                                break
+                        seq_stripped = seq.strip("\r\n")
+                        if seq_stripped in ("\x1b[A", "\x1b[B", "\x1b[C", "\x1b[D", "\x1b[H", "\x1b[F", "\x1b[5~", "\x1b[6~", "\x1b[3~", "\x1b[2~", "\x1b[1~", "\x1b[4~", "\x1bOA", "\x1bOB", "\x1bOC", "\x1bOD"):
+                            break
+                        if len(seq) >= 8:
+                            break
+                except Exception:
+                    pass
+                # Normalize to canonical CSI form
+                s = seq.strip("\r\n")
+                if s.startswith("\x1bOA"):
+                    return "\x1b[A"
+                if s.startswith("\x1bOB"):
+                    return "\x1b[B"
+                if s.startswith("\x1bOC"):
+                    return "\x1b[C"
+                if s.startswith("\x1bOD"):
+                    return "\x1b[D"
+                if s.startswith("\x1b[A"):
+                    return "\x1b[A"
+                if s.startswith("\x1b[B"):
+                    return "\x1b[B"
+                if s.startswith("\x1b[C"):
+                    return "\x1b[C"
+                if s.startswith("\x1b[D"):
+                    return "\x1b[D"
+                if s.startswith("\x1b[5~"):
+                    return "\x1b[5~"
+                if s.startswith("\x1b[6~"):
+                    return "\x1b[6~"
+                if s.startswith("\x1b[H") or s.startswith("\x1b[1~"):
+                    return "\x1b[H"
+                if s.startswith("\x1b[F") or s.startswith("\x1b[4~"):
+                    return "\x1b[F"
+                return s
+            return ch
+        except Exception:
+            try:
+                return sys.stdin.read(1)
+            except Exception:
+                return ""
 
     def draw() -> None:
+        _build_lines()
         w = _term_width(explicit=explicit_width) if explicit_width is not None else _term_width()
-        screen = render_screen(payload, trace, refresh_time, reason, next_time, width=w, use_color=use_color)
+        h = _term_height()
+        lines = state["lines"]
+        offset = state["offset"]
+        visible = max(5, h - 2)
+        total = len(lines)
+        # slice viewport – always show footer so hints are visible even when content fits
+        if total <= visible:
+            view = lines
+            offset = 0
+            state["offset"] = 0
+        else:
+            view = lines[offset:offset + visible]
+        body = "\n".join(view)
+        # footer: position + hints (always visible)
+        if total <= visible:
+            pos = f"1-{total}/{total}"
+        else:
+            pos = f"{offset+1}-{min(offset+visible, total)}/{total}"
+        mode = "kompakt" if state["compact"] else "részletes"
+        footer_plain = f" {pos}  {mode}  [↑↓/j/k] [PgUp/PgDn]  [0/g] eleje [G] vége  [1/2/3] szekció [s] összegzés  [c] vált [R] frissít [Q] kilép "
+        if len(footer_plain) > w:
+            footer_plain = footer_plain[:w]
+        footer = _c(footer_plain.ljust(w), ANSI_REV, ANSI_DIM, use_color=use_color)
+        body = body + "\n" + footer
         _clear_screen()
-        out = screen + "\n"
-        # In raw mode (zsh), ONLCR is disabled -> \n must be \r\n, otherwise lines don't wrap
+        out = body + "\n"
         if old_term_holder["old"] is not None:
             out = out.replace("\n", "\r\n")
         sys.stdout.write(out)
@@ -1210,7 +1560,8 @@ def run_debug(no_color: bool = False, width: int | None = None) -> int:
             use_color_local = False
         else:
             use_color_local = _supports_color(no_color_flag=False) if os.environ.get("FORCE_COLOR") else False
-        screen = render_screen(payload, trace, refresh_time, reason, next_time, width=w, use_color=use_color_local)
+        # compact also applies in pipe? keep full for pipe
+        screen = render_screen(payload, trace, refresh_time, reason, next_time, width=w, use_color=use_color_local, compact=False)
         sys.stdout.write(screen + "\n")
         sys.stdout.flush()
         return 0
@@ -1223,21 +1574,8 @@ def run_debug(no_color: bool = False, width: int | None = None) -> int:
             if resized["flag"]:
                 resized["flag"] = False
                 draw()
-            deadline = refresh_time.timestamp() + DEBUG_INTERVAL_SECONDS
-            remaining = deadline - time.time()
-            if remaining <= 0:
-                refresh_time = datetime.now().astimezone()
-                reason = "automatikus (60 s)"
-                try:
-                    payload, trace = _do_refresh()
-                except Exception as exc:
-                    payload = {"ok": False, "status": "error", "display": "Codex: hiba", "message": str(exc)[:200]}
-                    trace = get_trace(payload)
-                next_time = datetime.fromtimestamp(refresh_time.timestamp() + DEBUG_INTERVAL_SECONDS).astimezone()
-                draw()
-                continue
 
-            timeout = min(remaining, 0.2)
+            timeout = 0.2
             try:
                 rlist, _, _ = select.select([sys.stdin], [], [], timeout)
             except InterruptedError:
@@ -1247,10 +1585,7 @@ def run_debug(no_color: bool = False, width: int | None = None) -> int:
                 continue
 
             if rlist:
-                try:
-                    ch = sys.stdin.read(1)
-                except Exception:
-                    ch = ""
+                ch = _read_key()
                 if not ch:
                     continue
                 if ch == "\x03":
@@ -1266,6 +1601,72 @@ def run_debug(no_color: bool = False, width: int | None = None) -> int:
                         payload = {"ok": False, "status": "error", "display": "Codex: hiba", "message": str(exc)[:200]}
                         trace = get_trace(payload)
                     next_time = datetime.fromtimestamp(refresh_time.timestamp() + DEBUG_INTERVAL_SECONDS).astimezone()
+                    state["offset"] = 0
+                    draw()
+                    continue
+                # compact toggle (C)
+                if ch in ("c", "C", "v", "V"):
+                    state["compact"] = not state["compact"]
+                    state["offset"] = 0
+                    draw()
+                    continue
+                # scrolling
+                h = _term_height()
+                visible = max(5, h - 2)
+                total = len(state["lines"])
+                max_off = max(0, total - visible)
+                moved = False
+                # handle multi-char sequences that may contain leading \r\n from os.read
+                # normalize: if ch contains multiple chars, take first matching
+                # check for arrow keys with both CSI and SS3 variants
+                if ch in ("j", "J", "\x1b[B", "\x1bOB", "\n", "\r"):  # down
+                    if state["offset"] < max_off:
+                        state["offset"] = min(max_off, state["offset"] + 1)
+                        moved = True
+                elif ch in ("k", "K", "\x1b[A", "\x1bOA"):  # up
+                    if state["offset"] > 0:
+                        state["offset"] = max(0, state["offset"] - 1)
+                        moved = True
+                elif ch in ("\x1b[6~", "f", "F", " "):  # PgDn / space
+                    if state["offset"] < max_off:
+                        state["offset"] = min(max_off, state["offset"] + visible)
+                        moved = True
+                elif ch in ("\x1b[5~", "b", "B"):  # PgUp
+                    if state["offset"] > 0:
+                        state["offset"] = max(0, state["offset"] - visible)
+                        moved = True
+                elif ch in ("0", "g", "\x1b[H", "\x1b[1~"):  # 0 or home/top -> legfelső
+                    if state["offset"] != 0:
+                        state["offset"] = 0
+                        moved = True
+                elif ch in ("G", "\x1b[F", "\x1b[4~"):  # end/bottom
+                    if state["offset"] != max_off:
+                        state["offset"] = max_off
+                        moved = True
+                elif ch in ("1", "2", "3"):
+                    if ch in state["section_offsets"]:
+                        state["offset"] = max(0, min(max_off, state["section_offsets"][ch]))
+                        moved = True
+                elif ch in ("s", "S", "4"):
+                    # summary
+                    key = "0" if "0" in state["section_offsets"] else "s"
+                    if key in state["section_offsets"]:
+                        state["offset"] = max(0, min(max_off, state["section_offsets"][key]))
+                        moved = True
+                # also handle bare escape sequences that arrived as multi-char string
+                elif "\x1b[A" in ch or "\x1bOA" in ch:
+                    if state["offset"] > 0:
+                        state["offset"] = max(0, state["offset"] - 1)
+                        moved = True
+                elif "\x1b[B" in ch or "\x1bOB" in ch:
+                    if state["offset"] < max_off:
+                        state["offset"] = min(max_off, state["offset"] + 1)
+                        moved = True
+                elif ch == "h" or ch == "?" :
+                    # help overlay: show footer help already, just redraw
+                    draw()
+                    continue
+                if moved:
                     draw()
     except KeyboardInterrupt:
         pass
