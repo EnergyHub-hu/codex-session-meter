@@ -21,6 +21,46 @@ function nextLocalMidnightEpochMillis(date) {
         0, 0, 0, 0
     ).getTime();
 }
+
+function localDayBounds(epochMillis) {
+    const date = new Date(epochMillis);
+    const startMillis = localMidnightEpochMillis(date);
+    const endMillis = nextLocalMidnightEpochMillis(date);
+    return {
+        startMillis,
+        endMillis,
+        durationMillis: endMillis - startMillis,
+    };
+}
+
+function addLocalCalendarDaysMillis(epochMillis, days) {
+    const date = new Date(epochMillis);
+    return new Date(
+        date.getFullYear(),
+        date.getMonth(),
+        date.getDate() + days,
+        date.getHours(),
+        date.getMinutes(),
+        date.getSeconds(),
+        date.getMilliseconds()
+    ).getTime();
+}
+
+function localCalendarDayUnitsBetween(startMillis, endMillis) {
+    if (!Number.isFinite(startMillis) || !Number.isFinite(endMillis))
+        return null;
+    if (endMillis <= startMillis)
+        return 0;
+    let cursor = startMillis;
+    let units = 0;
+    while (cursor < endMillis) {
+        const bounds = localDayBounds(cursor);
+        const segmentEnd = Math.min(endMillis, bounds.endMillis);
+        units += (segmentEnd - cursor) / bounds.durationMillis;
+        cursor = segmentEnd;
+    }
+    return units;
+}
 const LIMIT_COLOR_STOPS = [
     [0, '#B91C1C'],
     [25, '#EA580C'],
@@ -37,14 +77,12 @@ const PACE_COLOR_STOPS = [
     [83, '#22C55E'],
     [100, '#15803D'],
 ];
-const DAILY_PACE_MIN = -100;
-const DAILY_PACE_MAX = 200;
-const SESSION_PACE_MIN = -100;
-const SESSION_PACE_MAX = 100;
-
-function localCalendarDayMillis(date) {
-    return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
-}
+export const DAILY_REMAINING_MIN = -100;
+export const DAILY_REMAINING_MAX = 200;
+export const DAILY_PACE_MIN = DAILY_REMAINING_MIN;
+export const DAILY_PACE_MAX = DAILY_REMAINING_MAX;
+export const SESSION_PACE_MIN = -100;
+export const SESSION_PACE_MAX = 100;
 
 // ---------------------------------------------------------------------------
 // dailyLimitIndicatorLevel — shared internal
@@ -232,12 +270,20 @@ export function tracePaceColor(pace, min, max) {
     return _paceColorInternal(pace, min, max);
 }
 
+export function dailyRemainingColor(dailyRemainingPercent) {
+    return paceColor(dailyRemainingPercent, DAILY_REMAINING_MIN, DAILY_REMAINING_MAX);
+}
+
+export function traceDailyRemainingColor(dailyRemainingPercent) {
+    return _paceColorInternal(dailyRemainingPercent, DAILY_REMAINING_MIN, DAILY_REMAINING_MAX);
+}
+
 export function dailyPaceColor(pace) {
-    return paceColor(pace, DAILY_PACE_MIN, DAILY_PACE_MAX);
+    return dailyRemainingColor(pace);
 }
 
 export function traceDailyPaceColor(pace) {
-    return _paceColorInternal(pace, DAILY_PACE_MIN, DAILY_PACE_MAX);
+    return traceDailyRemainingColor(pace);
 }
 
 export function sessionPaceColor(pace) {
@@ -349,7 +395,7 @@ export function traceElapsedFractionOfWeek(resetAt, lastUpdated) {
 // ---------------------------------------------------------------------------
 // elapsedFractionOfConsumptionHorizon — shared internal
 // Weekly quota window remains 7 days (weeklyStart = reset - 7*DAY),
-// but expected consumption spreads over workdays * 24h.
+// but expected consumption spreads over workdays local calendar days.
 // ---------------------------------------------------------------------------
 function _elapsedFractionOfConsumptionHorizonInternal(resetAt, lastUpdated, workdays) {
     const trace = {
@@ -364,6 +410,8 @@ function _elapsedFractionOfConsumptionHorizonInternal(resetAt, lastUpdated, work
         weeklyStartMillis: null,
         consumptionDurationMillis: null,
         consumptionHorizonMillis: null,
+        cappedEndMillis: null,
+        elapsedCalendarDayUnits: null,
         elapsedMillis: null,
         rawFraction: null,
         clampedFraction: null,
@@ -377,14 +425,16 @@ function _elapsedFractionOfConsumptionHorizonInternal(resetAt, lastUpdated, work
         return {result: null, trace};
     }
     trace.weeklyStartMillis = weekStartMillis(trace.resetAtMillis);
-    trace.consumptionDurationMillis = workdays * DAY_MILLIS;
+    trace.consumptionHorizonMillis = addLocalCalendarDaysMillis(trace.weeklyStartMillis, workdays);
+    trace.consumptionDurationMillis = trace.consumptionHorizonMillis - trace.weeklyStartMillis;
     if (!Number.isFinite(trace.consumptionDurationMillis) || trace.consumptionDurationMillis <= 0) {
         trace.result = null;
         return {result: null, trace};
     }
-    trace.consumptionHorizonMillis = trace.weeklyStartMillis + trace.consumptionDurationMillis;
+    trace.cappedEndMillis = Math.min(Math.max(trace.lastUpdatedMillis, trace.weeklyStartMillis), trace.consumptionHorizonMillis);
+    trace.elapsedCalendarDayUnits = localCalendarDayUnitsBetween(trace.weeklyStartMillis, trace.cappedEndMillis);
     trace.elapsedMillis = Math.max(0, trace.lastUpdatedMillis - trace.weeklyStartMillis);
-    trace.rawFraction = trace.elapsedMillis / trace.consumptionDurationMillis;
+    trace.rawFraction = trace.elapsedCalendarDayUnits / workdays;
     trace.clampedFraction = Math.min(1, Math.max(0, trace.rawFraction));
     trace.result = trace.clampedFraction;
     return {result: trace.result, trace};
@@ -636,7 +686,8 @@ function _calculateWeeklyPaceInternal({quotaRemainingPercent, resetAt, lastUpdat
     trace.isIncomplete = false;
     trace.boundedQuotaRemainingPercent = Math.max(0, Math.min(100, quotaRemainingPercent));
     trace.weeklyStartMillis = weekStartMillis(trace.resetAtMillis);
-    trace.consumptionHorizonMillis = trace.weeklyStartMillis + workdays * DAY_MILLIS;
+    trace.consumptionHorizonMillis = addLocalCalendarDaysMillis(trace.weeklyStartMillis, workdays);
+    trace.consumptionDurationMillis = trace.consumptionHorizonMillis - trace.weeklyStartMillis;
     trace.fullDayBudget = 100 / workdays;
 
     trace.lastUpdatedDate = new Date(trace.lastUpdatedMillis);
@@ -647,13 +698,13 @@ function _calculateWeeklyPaceInternal({quotaRemainingPercent, resetAt, lastUpdat
     trace.effectiveDayEnd = Math.min(trace.localNextDay00, trace.consumptionHorizonMillis);
     trace.todayDuration = Math.max(0, trace.effectiveDayEnd - trace.effectiveDayStart);
     trace.todayDurationHours = trace.todayDuration / (60 * 60 * 1000);
-    trace.todayBudget = trace.todayDuration / DAY_MILLIS * trace.fullDayBudget;
+    trace.todayDayUnits = localCalendarDayUnitsBetween(trace.effectiveDayStart, trace.effectiveDayEnd) ?? 0;
+    trace.todayBudget = trace.todayDayUnits * trace.fullDayBudget;
 
     trace.nextDayCapped = Math.min(trace.localNextDay00, trace.consumptionHorizonMillis);
+    trace.allowedDayUnitsByEOD = localCalendarDayUnitsBetween(trace.weeklyStartMillis, trace.nextDayCapped) ?? 0;
     trace.allowedByEOD = Math.max(0, Math.min(100,
-        (trace.nextDayCapped - trace.weeklyStartMillis)
-        / (workdays * DAY_MILLIS)
-        * 100
+        trace.allowedDayUnitsByEOD / workdays * 100
     ));
 
     trace.actualUsage = 100 - trace.boundedQuotaRemainingPercent;
@@ -661,9 +712,11 @@ function _calculateWeeklyPaceInternal({quotaRemainingPercent, resetAt, lastUpdat
     trace.divisor = trace.todayBudget > 0 ? trace.todayBudget : trace.fullDayBudget;
     trace.dailyRemainingPercent = trace.available / trace.divisor * 100;
 
+    trace.cappedEndMillis = Math.min(Math.max(trace.lastUpdatedMillis, trace.weeklyStartMillis), trace.consumptionHorizonMillis);
+    trace.elapsedCalendarDayUnits = localCalendarDayUnitsBetween(trace.weeklyStartMillis, trace.cappedEndMillis) ?? 0;
     trace.elapsedMillis = Math.max(0, trace.lastUpdatedMillis - trace.weeklyStartMillis);
-    trace.elapsedFraction = Math.min(1, trace.elapsedMillis / (workdays * DAY_MILLIS));
-    trace.elapsedWorkdays = trace.elapsedFraction * workdays;
+    trace.elapsedFraction = Math.max(0, Math.min(1, trace.elapsedCalendarDayUnits / workdays));
+    trace.elapsedWorkdays = trace.elapsedCalendarDayUnits;
     trace.todayMinimumRemainingPercent = Math.max(0, 100 - trace.elapsedWorkdays * trace.fullDayBudget);
 
     trace.result = {

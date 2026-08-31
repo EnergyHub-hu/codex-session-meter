@@ -9,7 +9,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
-import {compactPanelComponents, dailyLimitIndicatorLevel, limitIndicatorColor, calculateSessionPace, calculateWeeklyPace, dailyPaceColor, sessionPaceColor, dailyConsumptionPace, paceToColor, weeklyConsumptionPace, weeklyPaceColor, elapsedFractionOfConsumptionHorizon} from './weekly-pace.js';
+import {compactPanelComponents, dailyLimitIndicatorLevel, limitIndicatorColor, calculateSessionPace, calculateWeeklyPace, dailyRemainingColor, sessionPaceColor, weeklyConsumptionPace, weeklyPaceColor, elapsedFractionOfConsumptionHorizon} from './weekly-pace.js';
 
 const DEFAULT_SETTINGS = {
     poll_interval_minutes: 1,
@@ -244,16 +244,10 @@ const CodexSessionIndicator = GObject.registerClass(class CodexSessionIndicator 
             lastUpdated: payload?.last_updated,
             workdays,
         });
-        const dailyPaceValue = paceResult.elapsedFraction != null
-            ? dailyConsumptionPace({
-                actualUsage: 100 - weeklyPercent,
-                expectedUsage: paceResult.elapsedFraction * 100,
-            })
-            : null;
         const dailyRemainingPercent = paceResult.dailyRemainingPercent;
         this._statusItem.label.set_text(`Állapot: ${payload?.status || 'unknown'}`);
         this._applyLimitDot(this._sessionLimitDot, payload?.session_percent, sessionPaceColor(sessionPace));
-        this._applyLimitDot(this._dailyLimitDot, dailyRemainingPercent, paceToColor(dailyPaceValue));
+        this._applyLimitDot(this._dailyLimitDot, dailyRemainingPercent, dailyRemainingColor(dailyRemainingPercent));
         const weeklyElapsedFraction = elapsedFractionOfConsumptionHorizon(payload?.weekly_reset_at, payload?.last_updated, workdays);
         const weeklyPace = weeklyConsumptionPace({
             quotaRemainingPercent: weeklyPercent,

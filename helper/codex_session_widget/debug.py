@@ -748,8 +748,11 @@ def _render_daily(trace: dict, width: int | None = None, use_color: bool | None 
     inp = d.get("input", {})
     wpr = d.get("weeklyPaceResult", {})
     wpr_trace = wpr.get("trace") or {}
-    pace = d.get("pace", {})
-    pcolor = d.get("paceColor", {})
+    # Task4: daily color is derived from remaining, not pace. Support both new "color" and legacy "paceColor".
+    color_data = d.get("color") if d.get("color") is not None else d.get("paceColor", {})
+    # legacy pace may still exist for backward compat, but new trace uses color
+    pace = d.get("pace", {}) or {}
+    pcolor = color_data
     level = d.get("indicatorLevel", {})
 
     weekly_percent = inp.get("weeklyPercent")
@@ -768,7 +771,8 @@ def _render_daily(trace: dict, width: int | None = None, use_color: bool | None 
         if wt.get("isIncomplete"):
             _emit(lines, "  n/a  (hiányzó bemenet)", width)
         else:
-            _emit(lines, f"  {_fmt_number(daily_remaining,2) if daily_remaining is not None else 'n/a'}% remaining  │  pace {_fmt_number(pace.get('result'),2) if pace.get('result') is not None else 'n/a'}×  │  {_fmt_color(pcolor.get('effective'))}", width)
+            # Compact shows remaining and color only; pace is not applicable for daily after Task4
+            _emit(lines, f"  {_fmt_number(daily_remaining,2) if daily_remaining is not None else 'n/a'}% remaining  │  {_fmt_color(pcolor.get('effective'))}", width)
         _emit(lines, _c("  [c] részletes  [2] ugrás", ANSI_DIM, use_color=use_color), width)
         return "\n".join(lines)
 
@@ -798,12 +802,10 @@ def _render_daily(trace: dict, width: int | None = None, use_color: bool | None 
         _emit(lines, "Napi keret nem számítható (hiányzó bemenet).", width)
         _emit(lines, f"  isQuotaFinite={wt.get('isQuotaFinite')}, isResetFinite={wt.get('isResetFinite')}, isLastUpdatedFinite={wt.get('isLastUpdatedFinite')}", width)
         lines.append("")
-        lines.append(_c("PACE SZÁMÍTÁS", ANSI_BOLD, use_color=use_color))
-        lines.append(_hr(min(24, width), "─", use_color=use_color))
-        _emit(lines, "Pace nem számítható (hiányzó daily elapsedFraction).", width)
-        lines.append("")
-        lines.append(_c("COLOR / DISPLAY", ANSI_BOLD, use_color=use_color))
-        lines.append(_hr(min(24, width), "─", use_color=use_color))
+        lines.append(_c("COLOR / DISPLAY — napi remaining színe", ANSI_BOLD, use_color=use_color))
+        lines.append(_hr(min(52, width), "─", use_color=use_color))
+        _emit(lines, "A napi pont ugyanazt az EOD-normalizált értéket reprezentálja,", width)
+        _emit(lines, "mint a Daily százalék.", width)
         _emit(lines, f"Indicator level: {level.get('result', 'n/a')}", width)
         _emit(lines, f"Effective color: {_fmt_color(pcolor.get('effective'))}", width)
         return "\n".join(lines)
@@ -813,10 +815,6 @@ def _render_daily(trace: dict, width: int | None = None, use_color: bool | None 
         lines.append(_c("REMAINING / PACE (kompakt)", ANSI_BOLD, use_color=use_color))
         lines.append(_hr(min(28, width), "─", use_color=use_color))
         _emit(lines, f"Remaining: {_fmt_number(daily_remaining,4) if daily_remaining is not None else 'n/a'}%  (EOD-normalizált)", width)
-        if pace.get("result") is not None:
-            _emit(lines, f"Pace: {_fmt_number(pace.get('result'),4)}×  (actual/expected)", width)
-        else:
-            _emit(lines, f"Pace: n/a  ({(pace.get('trace') or {}).get('reason','hiányzó')})", width)
         _emit(lines, f"Szín: {_fmt_color(pcolor.get('effective'))}  → {level.get('result','n/a')}", width)
         _emit(lines, _c("Részletek: [c] teljes", ANSI_DIM, use_color=use_color), width)
         return "\n".join(lines)
@@ -829,11 +827,13 @@ def _render_daily(trace: dict, width: int | None = None, use_color: bool | None 
         _emit(lines, f"  {wt.get('resetAtMillis')} − 7×86400000 = {wt.get('weeklyStartMillis')} ms", width, subsequent_indent="    ")
         for part in _fmt_millis_compact(wt.get('weeklyStartMillis'), width - 2):
             _emit(lines, f"  {part}", width)
-    _emit(lines, "Consumption horizon = weeklyStart + workdays × 24h:", width)
+    _emit(lines, "Consumption horizon = weeklyStart + N helyi naptári nap:", width)
     if wt.get("consumptionHorizonMillis") is not None:
-        _emit(lines, f"  {wt.get('weeklyStartMillis')} + {workdays}×86400000 = {wt.get('consumptionHorizonMillis')} ms", width, subsequent_indent="    ")
+        _emit(lines, f"  {wt.get('weeklyStartMillis')} + {workdays} helyi naptári nap = {wt.get('consumptionHorizonMillis')} ms", width, subsequent_indent="    ")
         for part in _fmt_millis_compact(wt.get('consumptionHorizonMillis'), width - 2):
             _emit(lines, f"  {part}", width)
+        if wt.get("consumptionDurationMillis") is not None:
+            _emit(lines, f"  consumptionDuration = horizon − weeklyStart = {wt.get('consumptionDurationMillis')} ms ({_fmt_number(wt.get('consumptionDurationMillis')/3600000 if isinstance(wt.get('consumptionDurationMillis'), (int,float)) else None, 4)} h)", width, subsequent_indent="    ")
     _emit(lines, f"FullDayBudget = 100 / {workdays} = {_fmt_number(wt.get('fullDayBudget'), 4)} pp", width)
     lines.append("")
     _emit(lines, f"lastUpdatedDate: {_safe(wt.get('lastUpdatedDate'))}", width)
@@ -860,8 +860,19 @@ def _render_daily(trace: dict, width: int | None = None, use_color: bool | None 
             _emit(lines, f"  {part}", width)
     if wt.get("todayDuration") is not None:
         _emit(lines, f"todayDuration = max(0, end − start) = {wt.get('todayDuration')} ms  ({_fmt_number(wt.get('todayDurationHours'), 4)} h)", width, subsequent_indent="  ")
+    if wt.get("todayDayUnits") is not None:
+        _emit(lines, "Mai helyi naptári nap:", width, subsequent_indent="  ")
+        if wt.get("localToday00") is not None:
+            _emit(lines, f"  localToday00: {wt.get('localToday00')} ms", width, subsequent_indent="    ")
+        if wt.get("localNextDay00") is not None:
+            _emit(lines, f"  localNextDay00: {wt.get('localNextDay00')} ms", width, subsequent_indent="    ")
+        _emit(lines, f"  actual duration: {_fmt_number(wt.get('todayDurationHours'), 4)} h", width, subsequent_indent="    ")
+        _emit(lines, f"  calendar-day units: {_fmt_number(wt.get('todayDayUnits'), 6)}", width, subsequent_indent="    ")
     if wt.get("todayBudget") is not None:
-        _emit(lines, f"todayBudget = todayDuration/DAY × fullDayBudget = {_fmt_number(wt.get('todayDuration'), 2)} / 86400000 × {_fmt_number(wt.get('fullDayBudget'), 4)} = {_fmt_number(wt.get('todayBudget'), 6)} pp", width, subsequent_indent="  ")
+        if wt.get("todayDayUnits") is not None:
+            _emit(lines, f"todayBudget = todayDayUnits × fullDayBudget = {_fmt_number(wt.get('todayDayUnits'), 6)} × {_fmt_number(wt.get('fullDayBudget'), 4)} = {_fmt_number(wt.get('todayBudget'), 6)} pp", width, subsequent_indent="  ")
+        else:
+            _emit(lines, f"todayBudget = todayDayUnits × fullDayBudget = {_fmt_number(wt.get('todayBudget'), 6)} pp", width, subsequent_indent="  ")
 
     lines.append("")
     lines.append(_c("REMAINING % SZÁMÍTÁS  —  EOD-normalizált napi maradék", ANSI_BOLD, use_color=use_color))
@@ -870,8 +881,12 @@ def _render_daily(trace: dict, width: int | None = None, use_color: bool | None 
     if wt.get("nextDayCapped") is not None:
         _emit(lines, f"nextDayCapped = min(localNextDay00, horizon) = {wt.get('nextDayCapped')} ms", width, subsequent_indent="  ")
     if wt.get("allowedByEOD") is not None:
-        _emit(lines, "allowedByEOD = (nextDayCapped − weeklyStart)/(workdays×DAY)×100", width)
-        if wt.get("weeklyStartMillis") is not None and wt.get("nextDayCapped") is not None:
+        if wt.get("allowedDayUnitsByEOD") is not None:
+            _emit(lines, f"allowedDayUnitsByEOD = localCalendarDayUnitsBetween(weeklyStart, nextDayCapped) = {_fmt_number(wt.get('allowedDayUnitsByEOD'), 6)}", width)
+        _emit(lines, "allowedByEOD = allowedDayUnitsByEOD / workdays × 100", width)
+        if wt.get("allowedDayUnitsByEOD") is not None:
+            _emit(lines, f"  = {_fmt_number(wt.get('allowedDayUnitsByEOD'), 6)} / {workdays} × 100 = {_fmt_percent(wt.get('allowedByEOD'), 4)}", width, subsequent_indent="    ")
+        elif wt.get("weeklyStartMillis") is not None and wt.get("nextDayCapped") is not None:
             _emit(lines, f"  = ({wt.get('nextDayCapped')} − {wt.get('weeklyStartMillis')}) / ({workdays}×86400000) × 100", width, subsequent_indent="    ")
             _emit(lines, f"  = {_fmt_percent(wt.get('allowedByEOD'), 4)}", width, subsequent_indent="    ")
     if wt.get("actualUsage") is not None:
@@ -897,73 +912,42 @@ def _render_daily(trace: dict, width: int | None = None, use_color: bool | None 
         _emit(lines, f"Indicator class: codex-session-daily-limit-{level.get('result', 'n/a')}", width)
     if wt.get("elapsedFraction") is not None:
         _emit(lines, f"elapsedMillis = max(0, lastUpdated − weeklyStart) = {wt.get('elapsedMillis')} ms", width, subsequent_indent="  ")
-        _emit(lines, f"elapsedFraction = min(1, elapsedMillis/(workdays×DAY)) = {_fmt_number(wt.get('elapsedFraction'), 6)}", width, subsequent_indent="  ")
-        _emit(lines, f"  = {wt.get('elapsedMillis')} / {workdays * 86400000} = {_fmt_number(wt.get('elapsedFraction'), 6)}", width, subsequent_indent="    ")
-        _emit(lines, f"elapsedWorkdays = elapsedFraction × workdays = {_fmt_number(wt.get('elapsedWorkdays'), 4)}", width, subsequent_indent="  ")
+        if wt.get("elapsedCalendarDayUnits") is not None:
+            _emit(lines, f"elapsedCalendarDayUnits = localCalendarDayUnitsBetween(weeklyStart, cappedEnd) = {_fmt_number(wt.get('elapsedCalendarDayUnits'), 6)}", width, subsequent_indent="  ")
+        _emit(lines, f"elapsedFraction = elapsedCalendarDayUnits / workdays = {_fmt_number(wt.get('elapsedCalendarDayUnits'), 6) if wt.get('elapsedCalendarDayUnits') is not None else 'n/a'} / {workdays} = {_fmt_number(wt.get('elapsedFraction'), 6)}", width, subsequent_indent="  ")
+        _emit(lines, f"elapsedWorkdays = elapsedCalendarDayUnits = {_fmt_number(wt.get('elapsedWorkdays'), 4)}", width, subsequent_indent="  ")
         _emit(lines, f"todayMinimumRemainingPercent = max(0, 100 − elapsedWorkdays×fullDayBudget) = {_fmt_number(wt.get('todayMinimumRemainingPercent'), 4)} %", width, subsequent_indent="  ")
 
     lines.append("")
-    lines.append(_c("PACE SZÁMÍTÁS  —  dailyConsumptionPace()  [napi pont színe]", ANSI_BOLD, use_color=use_color))
-    lines.append(_hr(min(58, width), "─", use_color=use_color))
-    _emit(lines, "A napi pont színe NEM a napi remaining-ből jön, hanem külön pace-ből:", width)
-    _emit(lines, "  dailyPace = actualUsage / expectedUsage", width)
-    _emit(lines, "  actualUsage   = 100 − weeklyPercent", width)
-    _emit(lines, "  expectedUsage = elapsedFraction(daily) × 100", width)
-    pt = pace.get("trace") or {}
-    if pace.get("result") is None:
-        _emit(lines, "Eredmény: n/a (null)", width)
-        if pt.get("reason"):
-            _emit(lines, f"Ok: {pt.get('reason')}", width)
-        elif pt.get("isActualFinite") is False or pt.get("isExpectedFinite") is False:
-            _emit(lines, "Ok: nem véges bemenet", width)
-    else:
-        _emit(lines, f"actualUsage   = 100 − {_fmt_number(weekly_percent, 2)} = {_fmt_number(pt.get('actualUsage'), 4)} pp", width, subsequent_indent="  ")
-        _emit(lines, f"expectedUsage = elapsedFraction × 100 = {_fmt_number(wt.get('elapsedFraction'), 6)} × 100 = {_fmt_number(pt.get('expectedUsage'), 4)} pp", width, subsequent_indent="  ")
-        if pt.get("isZeroZero"):
-            _emit(lines, "Speciális: expected=0 és actual=0  → pace = 1.0 (pontosan terv szerint)", width)
-        elif pt.get("isInfiniteCase"):
-            _emit(lines, "Speciális: expected=0 de actual>0  → pace = ∞ (idő előtt fogyott)", width)
-            _emit(lines, f"  actualUsage={_fmt_number(pt.get('actualUsage'),4)} > 0, expectedUsage=0", width)
-        else:
-            _emit(lines, f"Raw pace = actual / expected = {_fmt_number(pt.get('actualUsage'), 4)} / {_fmt_number(pt.get('expectedUsage'), 4)} = {_fmt_number(pt.get('ratio'), 6)}", width, subsequent_indent="  ")
-        _emit(lines, f"Final pace: {_fmt_number(pace.get('result'), 6)}×", width)
-        _emit(lines, "  1.00 = terv szerinti ütem", width)
-        _emit(lines, "  <1.00 = lassabb a tervnél (kíméled a keretet)", width)
-        _emit(lines, "  >1.00 = gyorsabb a tervnél (gyorsabban fogy)", width)
-        if isinstance(pace.get("result"), float) and math.isinf(pace.get("result")):
-            _emit(lines, "  ∞ = végtelen: nulla idő alatt már fogyott", width)
-    lines.append("")
-    lines.append(_c("COLOR / DISPLAY  —  paceToColor()  küszöbök", ANSI_BOLD, use_color=use_color))
+    lines.append(_c("COLOR / DISPLAY — napi remaining színe", ANSI_BOLD, use_color=use_color))
     lines.append(_hr(min(52, width), "─", use_color=use_color))
-    pct = pcolor.get("trace") or {}
-    fallback = pcolor.get("fallback") if isinstance(pcolor.get("fallback"), dict) else {}
-    if pace.get("result") is None:
-        _emit(lines, "Pace: n/a", width)
-        _emit(lines, f"Fallback (limitIndicatorColor): {_fmt_color(fallback.get('result') if isinstance(fallback, dict) else pcolor.get('effective'))}", width)
+    _emit(lines, "A napi pont ugyanazt az EOD-normalizált értéket reprezentálja,", width)
+    _emit(lines, "mint a Daily százalék.", width)
+    lines.append("")
+    if daily_remaining is None or not isinstance(daily_remaining, (int, float)) or (isinstance(daily_remaining, float) and (math.isnan(daily_remaining) or math.isinf(daily_remaining))):
+        _emit(lines, "Color input: n/a", width)
+        fallback = pcolor.get("fallback") if isinstance(pcolor.get("fallback"), dict) else {}
+        fb_color = fallback.get("result") if isinstance(fallback, dict) else pcolor.get("effective")
+        _emit(lines, f"Fallback (limitIndicatorColor): {_fmt_color(fb_color)}", width)
+        _emit(lines, f"Effective dot color: {_fmt_color(pcolor.get('effective'))}", width)
     else:
-        _emit(lines, f"Pace input: {_fmt_number(pace.get('result'), 6)}", width)
-        if pct.get("selectedThreshold") is not None:
-            thr = pct.get("selectedThreshold")
-            bands = [
-                (0.80, "#15803D", "zöld (lassú / takarékos)"),
-                (0.94, "#84CC16", "világoszöld"),
-                (1.05, "#FACC15", "sárga (terv közelében)"),
-                (1.25, "#EA580C", "narancs (gyors)"),
-                (float("inf"), "#B91C1C", "piros (kritikus)"),
-            ]
-            _emit(lines, "Threshold értékelés:", width)
-            for b_thr, b_col, b_label in bands:
-                marker = " ← kiválasztott" if b_col == pct.get("selectedColor") else ""
-                thr_str = "∞" if math.isinf(b_thr) else f"{b_thr:.2f}"
-                # color dot
-                dot = _c("●", ANSI_BOLD, use_color=use_color) if marker else "○"
-                _emit(lines, f"  {dot} pace ≤ {thr_str}  → {b_col}  {b_label}{marker}", width, subsequent_indent="    ")
-            _emit(lines, f"Selected band küszöb: {thr if not math.isinf(thr) else '∞'}", width)
-        _emit(lines, f"Selected color: {_fmt_color(pcolor.get('result'))}", width)
+        _emit(lines, f"Color input: {_fmt_number(daily_remaining, 4)} %", width)
+        lines.append("")
+        _emit(lines, "Normalizáció:", width)
+        pct = pcolor.get("trace") or {}
+        norm_trace = pct.get("normalizeTrace") or {}
+        clamped = norm_trace.get("clamped")
+        _emit(lines, f"  clamp [-100, 200] → {_fmt_number(clamped, 4) if isinstance(clamped, (int, float)) else 'n/a'}", width, subsequent_indent="    ")
+        _emit(lines, f"  normalized = (clamped − min)/(max−min)×100 = {_fmt_number(pct.get('normalized'), 4)} %", width, subsequent_indent="    ")
+        if pct.get("selectedIndex") is not None:
+            _emit(lines, f"  PACE_COLOR_STOPS intervallum: index {pct.get('selectedIndex')}  [{pct.get('lowerPercent')}%, {pct.get('upperPercent')}%]", width, subsequent_indent="    ")
+            _emit(lines, f"  Alsó szín: {_fmt_color(pct.get('lowerColor'))}  Felső szín: {_fmt_color(pct.get('upperColor'))}", width, subsequent_indent="    ")
+            _emit(lines, f"  ratio = (norm − lower)/(upper−lower) = {_fmt_number(pct.get('ratio'), 6)}", width, subsequent_indent="    ")
+            _emit(lines, f"  Interpolált RGB: {pct.get('interpolatedRgb')}", width, subsequent_indent="    ")
+        _emit(lines, f"Selected / interpolated: {_fmt_color(pcolor.get('result'))}", width)
+        fallback = pcolor.get("fallback") if isinstance(pcolor.get("fallback"), dict) else {}
         _emit(lines, f"Fallback (limitIndicatorColor): {_fmt_color(fallback.get('result') if isinstance(fallback, dict) else 'n/a')}", width)
         _emit(lines, f"Effective dot color: {_fmt_color(pcolor.get('effective'))}", width)
-        if isinstance(pace.get("result"), float) and math.isinf(pace.get("result")):
-            _emit(lines, "Megjegyzés: pace=∞ → paceToColor(null) → fallback szín érvényesül", width)
     _emit(lines, f"Indicator remaining: {_fmt_percent(daily_remaining, 2) if daily_remaining is not None else 'n/a'}", width)
     _emit(lines, f"Indicator class: codex-session-daily-limit-{level.get('result', 'n/a')}", width)
 
@@ -1072,7 +1056,7 @@ def _render_weekly(trace: dict, width: int | None = None, use_color: bool | None
     _emit(lines, "Heti pace = actualUsage / expectedUsage", width)
     _emit(lines, "  actualUsage   = 100 − weeklyPercent", width)
     _emit(lines, "  expectedUsage = elapsedFractionOfConsumptionHorizon × 100", width)
-    _emit(lines, "  elapsedFractionOfConsumptionHorizon = elapsedMillis / (workdays×DAY)  [fogyasztási horizont]", width)
+    _emit(lines, "  elapsedFractionOfConsumptionHorizon = elapsedCalendarDayUnits / workdays  [fogyasztási horizont, helyi naptári nap]", width)
     lines.append("")
     if et.get("isResetFinite") is False or et.get("isLastUpdatedFinite") is False:
         _emit(lines, "elapsedFraction: n/a (érvénytelen timestamp)", width)
@@ -1108,7 +1092,7 @@ def _render_weekly(trace: dict, width: int | None = None, use_color: bool | None
                 except Exception:
                     wd = "?"
         if cons_dur is not None:
-            _emit(lines, f"  consumptionDuration: {wd} × 86400000 = {cons_dur} ms", width, subsequent_indent="    ")
+            _emit(lines, f"  consumptionDuration: {wd} helyi naptári nap = {cons_dur} ms ({_fmt_number(cons_dur/3600000 if isinstance(cons_dur,(int,float)) else None,4)} h)", width, subsequent_indent="    ")
         else:
             # fallback old field
             _emit(lines, f"  weekMillis = 7 × 86400000 = {et.get('weekMillis')} ms", width)
@@ -1122,13 +1106,19 @@ def _render_weekly(trace: dict, width: int | None = None, use_color: bool | None
         if isinstance(et.get('elapsedMillis'), (int, float)):
             hrs = et.get('elapsedMillis') / 3600000
             days = et.get('elapsedMillis') / 86400000
-            _emit(lines, f"    = {_fmt_number(hrs, 2)} h  ({_fmt_number(days, 4)} nap)", width)
-        if cons_dur is not None:
+            _emit(lines, f"    = {_fmt_number(hrs, 2)} h  ({_fmt_number(days, 4)} nap, abszolút)", width)
+        if et.get('elapsedCalendarDayUnits') is not None:
+            _emit(lines, f"  elapsedCalendarDayUnits = localCalendarDayUnitsBetween(weeklyStart, cappedEnd) = {_fmt_number(et.get('elapsedCalendarDayUnits'), 6)}", width, subsequent_indent="    ")
+            _emit(lines, f"  rawFraction: elapsedCalendarDayUnits / workdays = {_fmt_number(et.get('elapsedCalendarDayUnits'), 6)} / {wd} = {_fmt_number(et.get('rawFraction'), 6)}", width, subsequent_indent="    ")
+        elif cons_dur is not None:
             _emit(lines, f"  rawFraction: elapsedMillis / consumptionDuration = {et.get('elapsedMillis')} / {cons_dur} = {_fmt_number(et.get('rawFraction'), 6)}", width, subsequent_indent="    ")
         else:
             _emit(lines, f"  rawFraction = elapsed / weekMillis = {_fmt_number(et.get('rawFraction'), 6)}", width, subsequent_indent="    ")
         _emit(lines, f"  clamped fraction: min(1, max(0, raw)) = {_fmt_number(et.get('clampedFraction'), 6)}", width, subsequent_indent="    ")
         _emit(lines, f"  Final elapsedFraction: {_fmt_number(elapsed.get('result'), 6)}  ({_fmt_percent(elapsed.get('result') * 100 if isinstance(elapsed.get('result'), (int,float)) else None, 2)})", width, subsequent_indent="    ")
+        if et.get('elapsedCalendarDayUnits') is not None:
+            _emit(lines, f"  elapsedCalendarDayUnits = {_fmt_number(et.get('elapsedCalendarDayUnits'), 6)}", width, subsequent_indent="    ")
+            _emit(lines, f"  elapsedFraction = elapsedCalendarDayUnits / workdays = {_fmt_number(elapsed.get('result'), 6)}", width, subsequent_indent="    ")
         # expose the new debug-required lines explicitly for testability
         if cons_dur is not None:
             _emit(lines, f"  clamped fraction: {elapsed.get('result')}", width)
@@ -1211,8 +1201,11 @@ def _render_summary(trace: dict, width: int | None = None, use_color: bool | Non
     s_color = s.get("paceColor", {}).get("effective")
 
     d_rem = d.get("remaining", {}).get("result")
-    d_pace = d.get("pace", {}).get("result")
-    d_color = d.get("paceColor", {}).get("effective")
+    # Task4: daily pace no longer exists; color from remaining
+    d_pace = d.get("pace", {}).get("result") if d.get("pace") else None
+    # Prefer new "color" key, fallback to legacy "paceColor"
+    _d_color_src = d.get("color") if d.get("color") is not None else d.get("paceColor", {})
+    d_color = _d_color_src.get("effective") if isinstance(_d_color_src, dict) else None
 
     w_rem = w.get("remaining", {}).get("rounded")
     w_pace = w.get("pace", {}).get("result")

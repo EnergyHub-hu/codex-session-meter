@@ -6,7 +6,6 @@
 import {
     traceCalculateSessionPace,
     traceCalculateWeeklyPace,
-    traceDailyConsumptionPace,
     traceElapsedFractionOfConsumptionHorizon,
     traceWeeklyConsumptionPace,
     tracePaceToColor,
@@ -14,6 +13,7 @@ import {
     traceLimitIndicatorColor,
     traceDailyLimitIndicatorLevel,
     traceNormalizePace,
+    traceDailyRemainingColor,
 } from './weekly-pace.js';
 
 import fs from 'node:fs';
@@ -78,19 +78,9 @@ function buildTrace(payload) {
     const paceResult = weeklyPaceTrace.result;
     const dailyRemainingPercent = paceResult?.dailyRemainingPercent ?? null;
 
-    // Daily pace: actualUsage / expectedUsage where expected = elapsedFraction * 100
-    let dailyPaceTrace;
-    if (paceResult?.elapsedFraction != null && Number.isFinite(weeklyPercent)) {
-        const actualUsage = 100 - weeklyPercent;
-        const expectedUsage = paceResult.elapsedFraction * 100;
-        dailyPaceTrace = traceDailyConsumptionPace({actualUsage, expectedUsage});
-    } else {
-        dailyPaceTrace = {result: null, trace: {reason: 'elapsedFraction or weeklyPercent unavailable', elapsedFraction: paceResult?.elapsedFraction ?? null, weeklyPercent}};
-    }
-    const dailyPace = dailyPaceTrace.result;
-    const dailyPaceColorTrace = tracePaceToColor(dailyPace);
+    const dailyColorTrace = traceDailyRemainingColor(dailyRemainingPercent);
     const dailyFallbackColorTrace = traceLimitIndicatorColor(dailyRemainingPercent);
-    const dailyEffectiveColor = dailyPaceColorTrace.result ?? dailyFallbackColorTrace.result;
+    const dailyEffectiveColor = dailyColorTrace.result ?? dailyFallbackColorTrace.result;
     const dailyLevelTrace = traceDailyLimitIndicatorLevel(dailyRemainingPercent);
 
     // --- Weekly block ---
@@ -176,13 +166,9 @@ function buildTrace(payload) {
                 result: dailyRemainingPercent,
                 trace: weeklyPaceTrace.trace,
             },
-            pace: {
-                result: dailyPace,
-                trace: dailyPaceTrace.trace,
-            },
-            paceColor: {
-                result: dailyPaceColorTrace.result,
-                trace: dailyPaceColorTrace.trace,
+            color: {
+                result: dailyColorTrace.result,
+                trace: dailyColorTrace.trace,
                 fallback: dailyFallbackColorTrace,
                 effective: dailyEffectiveColor,
             },

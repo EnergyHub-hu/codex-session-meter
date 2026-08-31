@@ -55,8 +55,10 @@ def test_get_trace_handles_infinity():
         "session_window_mins": None,
     })
     trace = get_trace(payload)
-    # daily pace should be Infinity (actual 5, expected 0)
-    assert trace["daily"]["pace"]["result"] == math.inf
+    # Task4: daily no longer has Infinity pace; daily color is derived from remaining
+    assert trace["daily"]["remaining"]["result"] is not None
+    assert not math.isinf(trace["daily"]["remaining"]["result"])
+    assert trace["daily"]["color"]["result"] is not None or trace["daily"]["color"]["effective"] is not None
     assert trace["weekly"]["pace"]["result"] == math.inf
 
 
@@ -513,7 +515,7 @@ def test_production_debug_equivalence_session():
 
 
 def test_production_debug_equivalence_daily():
-    """Daily remaining/pace from trace."""
+    """Daily remaining/color from trace (Task4: no daily pace)."""
     from codex_session_widget.debug import get_trace
     payload = _sample_payload({
         "weekly_percent": 60,
@@ -521,11 +523,12 @@ def test_production_debug_equivalence_daily():
         "last_updated": "2026-07-16T12:00:00+02:00",
     })
     trace = get_trace(payload)
-    # 3 days into 5-day window -> allowedByEOD 65% etc -> daily 125% etc
-    # Check trace has daily remaining
+    # Task4: daily is EOD-normalized remaining + color from remaining, not pace
     assert trace["daily"]["remaining"]["result"] is not None
-    assert isinstance(trace["daily"]["pace"]["result"], float)
-    assert trace["daily"]["paceColor"]["effective"] is not None
+    assert trace["daily"]["color"]["result"] is not None
+    assert trace["daily"]["color"]["effective"] is not None
+    # Weekly still has pace
+    assert isinstance(trace["weekly"]["pace"]["result"], float)
 
 
 def test_production_debug_equivalence_weekly():
@@ -672,3 +675,111 @@ def test_task2_weekly_percent_untouched_and_session_unchanged():
     # session pace unchanged (reference: 82% with elapsed 43% => pace 25)
     # We check session pace is finite and not null
     assert trace["session"]["pace"]["result"] is not None
+
+
+def _local_iso(y, m, d, h=0, mi=0, s=0):
+    # Generate local wall-clock ISO via Node to match JS localTimestamp helper, avoids Python tz pitfalls
+    import subprocess, json
+    js = f"console.log(new Date({y},{m-1},{d},{h},{mi},{s},0).toISOString())"
+    out = subprocess.check_output(["node", "-e", js], text=True).strip()
+    return out
+
+
+def _is_budapest_dst():
+    import subprocess
+    js = "const b=new Date(2026,2,29,0,0,0,0).getTime();const a=new Date(2026,2,30,0,0,0,0).getTime();const bf=new Date(2026,9,25,0,0,0,0).getTime();const af=new Date(2026,9,26,0,0,0,0).getTime();console.log(JSON.stringify([(a-b)/3600000,(af-bf)/3600000]))"
+    out = subprocess.check_output(["node", "-e", js], text=True).strip()
+    import json
+    s,f = json.loads(out)
+    return abs(s-23)<0.01 and abs(f-25)<0.01
+
+
+def test_task5_spring_dst_full_day_units():
+    """Task5: spring DST full day must be 1 calendar day unit, budget 20, allowed 20 (Budapest)."""
+    if not _is_budapest_dst():
+        pytest.skip("no DST in this TZ")
+    from codex_session_widget.debug import get_trace
+    import subprocess
+    # weeklyStart = 2026-03-29 00:00 local
+    js = "const ws=new Date(2026,2,29,0,0,0,0).getTime();console.log(new Date(ws+7*86400000).toISOString())"
+    reset_at = subprocess.check_output(["node", "-e", js], text=True).strip()
+    last_updated = _local_iso(2026, 3, 29, 12, 0, 0)
+    payload = _sample_payload({
+        "weekly_percent": 80,
+        "weekly_reset_at": reset_at,
+        "last_updated": last_updated,
+        "settings": {"weekly_workdays": 5},
+    })
+    trace = get_trace(payload)
+    tr = trace["daily"]["weeklyPaceResult"]["trace"]
+    # todayDurationHours approx 23
+    assert abs(tr["todayDurationHours"] - 23) < 0.05
+    assert abs(tr["todayDayUnits"] - 1) < 1e-9
+    assert abs(tr["todayBudget"] - 20) < 1e-9
+    assert abs(tr["allowedByEOD"] - 20) < 1e-9
+    # daily remaining should be 0 for 20pp usage on full DST day, not -4.35
+    dr = trace["daily"]["remaining"]["result"]
+    assert abs(dr) < 0.02
+    assert abs(tr["allowedDayUnitsByEOD"] - 1) < 1e-9
+
+
+def test_task5_autumn_dst_full_day_units():
+    if not _is_budapest_dst():
+        pytest.skip("no DST")
+    from codex_session_widget.debug import get_trace
+    import subprocess
+    js = "const ws=new Date(2026,9,25,0,0,0,0).getTime();console.log(new Date(ws+7*86400000).toISOString())"
+    reset_at = subprocess.check_output(["node", "-e", js], text=True).strip()
+    last_updated = _local_iso(2026, 10, 25, 12, 0, 0)
+    payload = _sample_payload({
+        "weekly_percent": 80,
+        "weekly_reset_at": reset_at,
+        "last_updated": last_updated,
+        "settings": {"weekly_workdays": 5},
+    })
+    trace = get_trace(payload)
+    tr = trace["daily"]["weeklyPaceResult"]["trace"]
+    assert abs(tr["todayDurationHours"] - 25) < 0.05
+    assert abs(tr["todayDayUnits"] - 1) < 1e-9
+    assert abs(tr["todayBudget"] - 20) < 1e-9
+    assert abs(tr["allowedByEOD"] - 20) < 1e-9
+    dr = trace["daily"]["remaining"]["result"]
+    assert abs(dr) < 0.02
+
+
+def test_task5_horizon_dst_duration():
+    if not _is_budapest_dst():
+        pytest.skip("no DST")
+    from codex_session_widget.debug import get_trace
+    import subprocess, json
+    # spring horizon 119h
+    js_spring = "const ws=new Date(2026,2,29,0,0,0,0).getTime();const h=new Date(ws);const hor=new Date(h.getFullYear(),h.getMonth(),h.getDate()+5,h.getHours(),h.getMinutes(),h.getSeconds(),h.getMilliseconds()).getTime();console.log(JSON.stringify([new Date(ws+7*86400000).toISOString(), new Date(hor).toISOString(), hor-ws]))"
+    reset_spring, horizon_spring, dur_spring = json.loads(subprocess.check_output(["node", "-e", js_spring], text=True).strip())
+    payload = _sample_payload({"weekly_percent": 100, "weekly_reset_at": reset_spring, "last_updated": horizon_spring, "settings": {"weekly_workdays": 5}})
+    trace = get_trace(payload)
+    et = trace["weekly"]["elapsedFraction"]["trace"]
+    assert abs(et["consumptionDurationMillis"]/3600000 - 119) < 0.01
+    assert abs(trace["weekly"]["elapsedFraction"]["result"] - 1) < 1e-9
+    # fall horizon 121h
+    js_fall = "const ws=new Date(2026,9,25,0,0,0,0).getTime();const h=new Date(ws);const hor=new Date(h.getFullYear(),h.getMonth(),h.getDate()+5,h.getHours(),h.getMinutes(),h.getSeconds(),h.getMilliseconds()).getTime();console.log(JSON.stringify([new Date(ws+7*86400000).toISOString(), new Date(hor).toISOString(), hor-ws]))"
+    reset_fall, horizon_fall, dur_fall = json.loads(subprocess.check_output(["node", "-e", js_fall], text=True).strip())
+    payload2 = _sample_payload({"weekly_percent": 100, "weekly_reset_at": reset_fall, "last_updated": horizon_fall, "settings": {"weekly_workdays": 5}})
+    trace2 = get_trace(payload2)
+    et2 = trace2["weekly"]["elapsedFraction"]["trace"]
+    assert abs(et2["consumptionDurationMillis"]/3600000 - 121) < 0.01
+    assert abs(trace2["weekly"]["elapsedFraction"]["result"] - 1) < 1e-9
+
+
+def test_task5_daily_half_progression():
+    if not _is_budapest_dst():
+        pytest.skip("no DST")
+    from codex_session_widget.debug import get_trace
+    import subprocess, json
+    # spring half: 11.5h real after midnight => 0.5 day units elapsed
+    js = "const ws=new Date(2026,2,29,0,0,0,0).getTime();console.log(JSON.stringify([new Date(ws+7*86400000).toISOString(), new Date(ws+11.5*3600000).toISOString()]))"
+    reset_at, last = json.loads(subprocess.check_output(["node", "-e", js], text=True).strip())
+    payload = _sample_payload({"weekly_percent": 95, "weekly_reset_at": reset_at, "last_updated": last, "settings": {"weekly_workdays": 5}})
+    trace = get_trace(payload)
+    tr = trace["daily"]["weeklyPaceResult"]["trace"]
+    assert abs(tr["elapsedCalendarDayUnits"] - 0.5) < 0.01
+    assert abs(tr["elapsedFraction"] - 0.1) < 0.01
