@@ -45,7 +45,9 @@ def main(argv: list[str] | None = None) -> int:
     subparsers.add_parser("logout")
     subparsers.add_parser("auth-status")
     subparsers.add_parser("open-logs")
-    subparsers.add_parser("debug")
+    debug_parser = subparsers.add_parser("debug")
+    debug_parser.add_argument("--no-color", action="store_true", help="Disable ANSI colors (also respects NO_COLOR env)")
+    debug_parser.add_argument("--width", type=int, default=None, help="Explicit width in columns (60-160, default: auto via terminal/COLUMNS)")
 
     args = parser.parse_args(argv)
 
@@ -97,7 +99,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "debug":
         from .debug import run_debug
 
-        return run_debug()
+        return run_debug(no_color=getattr(args, "no_color", False), width=getattr(args, "width", None))
 
     return 2
 
