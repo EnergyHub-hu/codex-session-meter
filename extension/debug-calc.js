@@ -54,16 +54,17 @@ function buildTrace(payload) {
         sessionWindowMins,
     });
     const sessionPace = sessionPaceTrace.result;
-    // session remaining
+    // session colors: need fallback trace first to reuse boundedPercent for remaining
+    const sessionFallbackColorTrace = traceLimitIndicatorColor(sessionPercent);
+    // session remaining — reuse trace boundedPercent instead of duplicating clamp formula
     const sessionRemainingRaw = sessionPercent;
-    const sessionRemainingClamped = Number.isFinite(sessionPercent) ? Math.max(0, Math.min(100, sessionPercent)) : null;
+    const sessionRemainingClamped = sessionFallbackColorTrace.trace.boundedPercent;
     const sessionRemainingRounded = Number.isFinite(sessionRemainingClamped) ? Math.round(sessionRemainingClamped) : null;
 
     // session colors: gradient via paceColor, fallback via limitIndicatorColor
     const sessionPaceColorTrace = sessionPace !== null
         ? tracePaceColor(sessionPace, -100, 100)
         : {result: null, trace: {pace: sessionPace, reason: 'pace is null, no gradient color'}};
-    const sessionFallbackColorTrace = traceLimitIndicatorColor(sessionPercent);
     const sessionEffectiveColor = sessionPaceColorTrace.result ?? sessionFallbackColorTrace.result;
     const sessionLevelTrace = traceDailyLimitIndicatorLevel(sessionPercent);
 
@@ -100,8 +101,8 @@ function buildTrace(payload) {
     const weeklyEffectiveColor = weeklyPaceColorTrace.result ?? weeklyFallbackColorTrace.result;
     const weeklyLevelTrace = traceDailyLimitIndicatorLevel(weeklyPercent);
 
-    // Weekly remaining (simple)
-    const weeklyRemainingClamped = Number.isFinite(weeklyPercent) ? Math.max(0, Math.min(100, weeklyPercent)) : null;
+    // Weekly remaining (simple) — reuse fallback trace boundedPercent instead of duplicating clamp
+    const weeklyRemainingClamped = weeklyFallbackColorTrace.trace.boundedPercent;
     const weeklyRemainingRounded = Number.isFinite(weeklyRemainingClamped) ? Math.round(weeklyRemainingClamped) : null;
 
     return {

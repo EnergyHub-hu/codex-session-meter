@@ -301,6 +301,30 @@ def _fmt_number(v: Any, decimals: int = 4) -> str:
         return str(v)
     return f"{v:.{decimals}f}"
 
+
+def _fmt_pace(v: Any, decimals: int = 6) -> str:
+    """Format pace value for debug rendering.
+
+    Explicit numeric check — never use truthiness (so 0.0 is not n/a).
+    Finite numbers are formatted with fixed decimals, Infinity/-Infinity
+    are rendered as textual Infinity, NaN/null are rendered as n/a.
+    """
+    if v is None:
+        return "n/a"
+    if isinstance(v, float) and math.isnan(v):
+        return "n/a"
+    if isinstance(v, float) and math.isinf(v):
+        return "Infinity" if v > 0 else "-Infinity"
+    if not isinstance(v, (int, float)):
+        return "n/a"
+    if isinstance(v, float) and math.isinf(v):
+        return "Infinity" if v > 0 else "-Infinity"
+    # finite number — include 0
+    try:
+        return f"{float(v):.{decimals}f}"
+    except Exception:
+        return "n/a"
+
 def _fmt_millis(ms: Any) -> str:
     if ms is None or not isinstance(ms, (int, float)):
         return "n/a"
@@ -634,13 +658,8 @@ def _render_session(trace: dict, width: int | None = None, use_color: bool | Non
     lines.append(_hr(min(28, width), "─", use_color=use_color))
     if session_used is not None and session_percent is not None:
         _emit(lines, f"Raw used (Codex API usedPercent, helper kerekítve): {_fmt_percent(session_used, 2)}", width)
-        _emit(lines, f"Bounded used (clamp [0,100]): {_fmt_percent(max(0, min(100, session_used)), 2) if isinstance(session_used, (int, float)) else 'n/a'}", width)
-        _emit(lines, "remaining = 100 - bounded_used", width)
-        if isinstance(session_used, (int, float)):
-            bounded = max(0, min(100, round(session_used)))
-            rem = 100 - bounded
-            _emit(lines, f"         = 100 - {bounded:.2f}", width)
-            _emit(lines, f"         = {rem:.2f} %", width)
+        _emit(lines, f"Bounded used (clamp [0,100]): {_fmt_percent(session_used, 2) if isinstance(session_used, (int, float)) else 'n/a'}  (helper által már clampelve)", width)
+        _emit(lines, "remaining = 100 - bounded_used  (helper már számolta)", width)
         _emit(lines, f"Eredmény (payload session_percent): {_fmt_percent(remaining.get('raw'), 2)}", width)
         _emit(lines, f"Widget kijelzés (kerekítve): {remaining.get('rounded') if remaining.get('rounded') is not None else 'n/a'} %", width)
     else:
@@ -1040,9 +1059,8 @@ def _render_weekly(trace: dict, width: int | None = None, use_color: bool | None
     else:
         if weekly_used is not None:
             _emit(lines, f"API usedPercent (helper kerekítve/clampelve): {_fmt_percent(weekly_used, 2)}", width)
-            bounded = max(0, min(100, round(weekly_used)) if isinstance(weekly_used, (int, float)) else weekly_used)
-            _emit(lines, f"  rounded: {_safe(round(weekly_used)) if isinstance(weekly_used, (int,float)) else 'n/a'}, clamped [0,100]: {_fmt_percent(bounded,2) if isinstance(bounded,(int,float)) else 'n/a'}", width, subsequent_indent="    ")
-            _emit(lines, f"remaining = 100 − bounded_used = 100 − {_safe(bounded)} = {_fmt_percent(remaining.get('raw'), 2)}", width, subsequent_indent="  ")
+            _emit(lines, f"  (helper által már clampelve, kerekítve)", width, subsequent_indent="    ")
+            _emit(lines, f"remaining = 100 − bounded_used  (helper már számolta) = {_fmt_percent(remaining.get('raw'), 2)}", width, subsequent_indent="  ")
         else:
             _emit(lines, f"remaining = 100 − used (közvetlen payload weekly_percent): {_fmt_percent(remaining.get('raw'), 2)}", width)
         _emit(lines, f"Raw remaining: {_fmt_percent(remaining.get('raw'), 2)}", width)
@@ -1137,8 +1155,16 @@ def _render_weekly(trace: dict, width: int | None = None, use_color: bool | None
                 _emit(lines, "Speciális: expected=0 de actual>0 → pace=∞", width)
                 _emit(lines, f"  actualUsage={_fmt_number(pt.get('actualUsage'),4)} > 0, expectedUsage=0", width)
             else:
-                _emit(lines, f"Raw pace = actual / expected = {_fmt_number(pt.get('actualUsage'),4)} / {_fmt_number(pt.get('expectedUsage'),4)} = {_fmt_number(pt.get('ratio') if 'ratio' in dpt else pace.get('result'), 6)}", width, subsequent_indent="  ")
-            _emit(lines, f"Final weekly pace: {_fmt_number(pace.get('result'), 6)}×", width)
+                # Raw pace must come from the same trace object as final weekly pace — do not recompute formula.
+                raw_pace_val = None
+                if isinstance(pt, dict) and "rawPace" in pt:
+                    raw_pace_val = pt.get("rawPace")
+                if raw_pace_val is None and isinstance(dpt, dict) and "ratio" in dpt:
+                    raw_pace_val = dpt.get("ratio")
+                if raw_pace_val is None:
+                    raw_pace_val = pace.get("result")
+                _emit(lines, f"Raw pace = actual / expected = {_fmt_number(pt.get('actualUsage'),4)} / {_fmt_number(pt.get('expectedUsage'),4)} = {_fmt_pace(raw_pace_val)}", width, subsequent_indent="  ")
+            _emit(lines, f"Final weekly pace: {_fmt_pace(pace.get('result'))}×", width)
             if isinstance(pace.get("result"), float) and math.isinf(pace.get("result")):
                 _emit(lines, "  ∞ = végtelen: a hét elején már fogyott a keret", width)
             else:

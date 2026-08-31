@@ -172,12 +172,19 @@ export function traceLimitIndicatorColor(remainingPercent) {
     return _limitIndicatorColorInternal(remainingPercent);
 }
 
+// ---------------------------------------------------------------------------
+// dailyLimitIndicatorColor — shared internal (alias for limitIndicatorColor)
+// ---------------------------------------------------------------------------
+function _dailyLimitIndicatorColorInternal(remainingPercent) {
+    return _limitIndicatorColorInternal(remainingPercent);
+}
+
 export function dailyLimitIndicatorColor(remainingPercent) {
-    return limitIndicatorColor(remainingPercent);
+    return _dailyLimitIndicatorColorInternal(remainingPercent).result;
 }
 
 export function traceDailyLimitIndicatorColor(remainingPercent) {
-    return traceLimitIndicatorColor(remainingPercent);
+    return _dailyLimitIndicatorColorInternal(remainingPercent);
 }
 
 // ---------------------------------------------------------------------------
@@ -270,36 +277,64 @@ export function tracePaceColor(pace, min, max) {
     return _paceColorInternal(pace, min, max);
 }
 
-export function dailyRemainingColor(dailyRemainingPercent) {
-    return paceColor(dailyRemainingPercent, DAILY_REMAINING_MIN, DAILY_REMAINING_MAX);
-}
-
-export function traceDailyRemainingColor(dailyRemainingPercent) {
+// ---------------------------------------------------------------------------
+// dailyRemainingColor — shared internal
+// ---------------------------------------------------------------------------
+function _dailyRemainingColorInternal(dailyRemainingPercent) {
     return _paceColorInternal(dailyRemainingPercent, DAILY_REMAINING_MIN, DAILY_REMAINING_MAX);
 }
 
+export function dailyRemainingColor(dailyRemainingPercent) {
+    return _dailyRemainingColorInternal(dailyRemainingPercent).result;
+}
+
+export function traceDailyRemainingColor(dailyRemainingPercent) {
+    return _dailyRemainingColorInternal(dailyRemainingPercent);
+}
+
+// ---------------------------------------------------------------------------
+// dailyPaceColor — shared internal (alias)
+// ---------------------------------------------------------------------------
+function _dailyPaceColorInternal(pace) {
+    return _dailyRemainingColorInternal(pace);
+}
+
 export function dailyPaceColor(pace) {
-    return dailyRemainingColor(pace);
+    return _dailyPaceColorInternal(pace).result;
 }
 
 export function traceDailyPaceColor(pace) {
-    return traceDailyRemainingColor(pace);
+    return _dailyPaceColorInternal(pace);
 }
 
-export function sessionPaceColor(pace) {
-    return paceColor(pace, SESSION_PACE_MIN, SESSION_PACE_MAX);
-}
-
-export function traceSessionPaceColor(pace) {
+// ---------------------------------------------------------------------------
+// sessionPaceColor — shared internal
+// ---------------------------------------------------------------------------
+function _sessionPaceColorInternal(pace) {
     return _paceColorInternal(pace, SESSION_PACE_MIN, SESSION_PACE_MAX);
 }
 
+export function sessionPaceColor(pace) {
+    return _sessionPaceColorInternal(pace).result;
+}
+
+export function traceSessionPaceColor(pace) {
+    return _sessionPaceColorInternal(pace);
+}
+
+// ---------------------------------------------------------------------------
+// weeklyPaceColor — shared internal
+// ---------------------------------------------------------------------------
+function _weeklyPaceColorInternal(pace) {
+    return _paceToColorInternal(pace);
+}
+
 export function weeklyPaceColor(pace) {
-    return paceToColor(pace);
+    return _weeklyPaceColorInternal(pace).result;
 }
 
 export function traceWeeklyPaceColor(pace) {
-    return tracePaceToColor(pace);
+    return _weeklyPaceColorInternal(pace);
 }
 
 const PACE_THRESHOLDS = [
@@ -457,12 +492,24 @@ export function traceElapsedFractionOfConsumptionHorizon(resetAt, lastUpdated, w
     return _elapsedFractionOfConsumptionHorizonInternal(resetAt, lastUpdated, workdays);
 }
 
+// ---------------------------------------------------------------------------
+// elapsedFractionOfWorkdayHorizon — shared internal (alias for consumption horizon)
+// ---------------------------------------------------------------------------
+function _elapsedFractionOfWorkdayHorizonInternal(resetAt, lastUpdated, workdays) {
+    // Support both positional and object param style via delegating to consumption horizon internal
+    if (resetAt !== null && typeof resetAt === 'object' && !Array.isArray(resetAt) && 'resetAt' in resetAt) {
+        const obj = resetAt;
+        return _elapsedFractionOfConsumptionHorizonInternal(obj.resetAt, obj.lastUpdated, obj.workdays);
+    }
+    return _elapsedFractionOfConsumptionHorizonInternal(resetAt, lastUpdated, workdays);
+}
+
 export function elapsedFractionOfWorkdayHorizon(resetAt, lastUpdated, workdays) {
-    return elapsedFractionOfConsumptionHorizon(resetAt, lastUpdated, workdays);
+    return _elapsedFractionOfWorkdayHorizonInternal(resetAt, lastUpdated, workdays).result;
 }
 
 export function traceElapsedFractionOfWorkdayHorizon(resetAt, lastUpdated, workdays) {
-    return traceElapsedFractionOfConsumptionHorizon(resetAt, lastUpdated, workdays);
+    return _elapsedFractionOfWorkdayHorizonInternal(resetAt, lastUpdated, workdays);
 }
 
 // ---------------------------------------------------------------------------
@@ -477,16 +524,19 @@ function _weeklyConsumptionPaceInternal({quotaRemainingPercent, elapsedFraction}
         actualUsage: null,
         expectedUsage: null,
         dailyPaceTrace: null,
+        rawPace: null,
         result: null,
     };
     if (!Number.isFinite(quotaRemainingPercent) || !Number.isFinite(elapsedFraction)) {
         trace.result = null;
+        trace.rawPace = null;
         return {result: null, trace};
     }
     trace.actualUsage = 100 - quotaRemainingPercent;
     trace.expectedUsage = elapsedFraction * 100;
     const inner = _dailyConsumptionPaceInternal({actualUsage: trace.actualUsage, expectedUsage: trace.expectedUsage});
     trace.dailyPaceTrace = inner.trace;
+    trace.rawPace = inner.trace.ratio !== null && inner.trace.ratio !== undefined ? inner.trace.ratio : inner.result;
     trace.result = inner.result;
     return {result: trace.result, trace};
 }
