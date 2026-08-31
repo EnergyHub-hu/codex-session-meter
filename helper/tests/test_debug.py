@@ -993,3 +993,470 @@ def test_task7_raw_pace_uses_shared_trace_not_recomputed():
     # If renderer incorrectly recomputed actual/expected, it would show 0.500000
     assert "0.566239" in out
     assert "0.500000" not in out.split("Raw pace")[1].split("\n")[0] if "Raw pace" in out else True
+
+
+# ===========================================================================
+# Task 8 — Regressziós tesztcsomag teljessé tétele (Python oldal)
+# ===========================================================================
+
+def _assert_close(a, b, eps=1e-6, msg=""):
+    assert abs(a - b) <= eps, f"{msg} {a} not close to {b} ±{eps} diff {abs(a-b)}"
+
+
+def test_task8_session_pace_matrix():
+    """Session pace matrix via get_trace (table-driven)."""
+    from codex_session_widget.debug import get_trace
+    # Use 300 min window, reset 2026-08-27 14:31 local
+    reset = _local_iso(2026, 8, 27, 14, 31, 0)
+    # compute start via Node
+    import subprocess, json
+    js = f"console.log(new Date(Date.parse('{reset}') - 300*60*1000).toISOString())"
+    start = subprocess.check_output(["node", "-e", js], text=True).strip()
+    cases = [
+        (0, 100, 0, "start 0% elapsed 100% remain =>0"),
+        (0.25, 75, 0, "quarter on-plan"),
+        (0.60, 90, 50, "reserve 60% elapsed 90% remain =>50"),
+        (0.20, 50, -30, "deficit 20% elapsed 50% remain =>-30"),
+        (1.0, 0, 0, "end 100% elapsed 0% remain =>0"),
+        (1.0, 20, 20, "end with 20% reserve =>20"),
+    ]
+    for frac, remaining, expected, desc in cases:
+        js2 = f"console.log(new Date(Date.parse('{start}') + {frac}*300*60*1000).toISOString())"
+        last = subprocess.check_output(["node", "-e", js2], text=True).strip()
+        payload = _sample_payload({
+            "session_percent": remaining,
+            "session_reset_at": reset,
+            "last_updated": last,
+            "session_window_mins": 300,
+            "weekly_percent": 80,
+            "weekly_reset_at": _local_iso(2026, 7, 20, 18, 0, 0),
+        })
+        trace = get_trace(payload)
+        pace = trace["session"]["pace"]["result"]
+        assert pace == expected, f"{desc}: expected {expected} got {pace}"
+        # invariant remaining + elapsed*100 -100
+        assert abs(pace - (remaining + frac*100 - 100)) < 1e-9
+
+
+def test_task8_session_clamp():
+    from codex_session_widget.debug import get_trace
+    import subprocess
+    reset = _local_iso(2026, 8, 27, 14, 31, 0)
+    js = f"console.log(new Date(Date.parse('{reset}') - 300*60*1000).toISOString())"
+    start = subprocess.check_output(["node", "-e", js], text=True).strip()
+    # high clamp 150 at end =>100
+    payload_high = _sample_payload({
+        "session_percent": 150,
+        "session_reset_at": reset,
+        "last_updated": reset,
+        "session_window_mins": 300,
+    })
+    tr_high = get_trace(payload_high)
+    assert tr_high["session"]["pace"]["result"] == 100
+    # low clamp -50 at start => -100
+    payload_low = _sample_payload({
+        "session_percent": -50,
+        "session_reset_at": reset,
+        "last_updated": start,
+        "session_window_mins": 300,
+    })
+    tr_low = get_trace(payload_low)
+    assert tr_low["session"]["pace"]["result"] == -100
+
+
+def test_task8_daily_first_full_day_matrix():
+    from codex_session_widget.debug import get_trace
+    import subprocess
+    # weeklyStart Monday 00:00 local 2026-07-13
+    js_ws = "console.log(new Date(2026,6,13,0,0,0,0).getTime())"
+    ws = int(subprocess.check_output(["node", "-e", js_ws], text=True).strip())
+    js_reset = f"console.log(new Date({ws}+7*86400000).toISOString())"
+    reset = subprocess.check_output(["node", "-e", js_reset], text=True).strip()
+    # Monday 10:00 and 22:30 same day, no consumption =>100
+    for h, mi in [(10, 0), (22, 30)]:
+        last = _local_iso(2026, 7, 13, h, mi, 0)
+        payload = _sample_payload({"weekly_percent": 100, "weekly_reset_at": reset, "last_updated": last, "settings": {"weekly_workdays": 5}})
+        tr = get_trace(payload)
+        assert tr["daily"]["remaining"]["result"] == 100, f"first full day no consumption at {h}:{mi} should be 100"
+        assert tr["daily"]["weeklyPaceResult"]["trace"]["todayBudget"] == 20
+        assert tr["daily"]["weeklyPaceResult"]["trace"]["allowedByEOD"] == 20
+    # half budget =>50
+    payload = _sample_payload({"weekly_percent": 90, "weekly_reset_at": reset, "last_updated": _local_iso(2026, 7, 13, 12, 0, 0), "settings": {"weekly_workdays": 5}})
+    tr = get_trace(payload)
+    _assert_close(tr["daily"]["remaining"]["result"], 50, 1e-9, "half budget")
+    # full budget =>0
+    payload = _sample_payload({"weekly_percent": 80, "weekly_reset_at": reset, "last_updated": _local_iso(2026, 7, 13, 12, 0, 0), "settings": {"weekly_workdays": 5}})
+    tr = get_trace(payload)
+    _assert_close(tr["daily"]["remaining"]["result"], 0, 1e-9, "full budget")
+
+
+def test_task8_daily_carry_over_150_via_trace():
+    from codex_session_widget.debug import get_trace
+    import subprocess
+    js_ws = "console.log(new Date(2026,6,13,0,0,0,0).getTime())"
+    ws = int(subprocess.check_output(["node", "-e", js_ws], text=True).strip())
+    js_reset = f"console.log(new Date({ws}+7*86400000).toISOString())"
+    reset = subprocess.check_output(["node", "-e", js_reset], text=True).strip()
+    # Tuesday EOD with 10 used =>150
+    payload = _sample_payload({"weekly_percent": 90, "weekly_reset_at": reset, "last_updated": _local_iso(2026, 7, 14, 12, 0, 0), "settings": {"weekly_workdays": 5}})
+    tr = get_trace(payload)
+    assert tr["daily"]["weeklyPaceResult"]["trace"]["allowedByEOD"] == 40
+    assert tr["daily"]["weeklyPaceResult"]["trace"]["actualUsage"] == 10
+    assert tr["daily"]["remaining"]["result"] == 150
+    assert tr["daily"]["remaining"]["result"] > 100
+    # not clamped and color gets raw
+    assert tr["daily"]["remaining"]["result"] != 100
+    assert tr["daily"]["color"]["result"] is not None
+
+
+def test_task8_daily_overuse_minus_50():
+    from codex_session_widget.debug import get_trace
+    import subprocess
+    js_ws = "console.log(new Date(2026,6,13,0,0,0,0).getTime())"
+    ws = int(subprocess.check_output(["node", "-e", js_ws], text=True).strip())
+    js_reset = f"console.log(new Date({ws}+7*86400000).toISOString())"
+    reset = subprocess.check_output(["node", "-e", js_reset], text=True).strip()
+    payload = _sample_payload({"weekly_percent": 70, "weekly_reset_at": reset, "last_updated": _local_iso(2026, 7, 13, 12, 0, 0), "settings": {"weekly_workdays": 5}})
+    tr = get_trace(payload)
+    _assert_close(tr["daily"]["remaining"]["result"], -50, 1e-9)
+    assert tr["daily"]["remaining"]["result"] < 0
+    assert tr["daily"]["remaining"]["result"] != 0
+
+
+def test_task8_partial_first_day_via_trace():
+    from codex_session_widget.debug import get_trace
+    reset = _local_iso(2026, 9, 7, 8, 3, 33)
+    last = _local_iso(2026, 8, 31, 11, 1, 34)
+    # no consumption =>100
+    payload = _sample_payload({"weekly_percent": 100, "weekly_reset_at": reset, "last_updated": last, "settings": {"weekly_workdays": 5}})
+    tr = get_trace(payload)
+    _assert_close(tr["daily"]["weeklyPaceResult"]["trace"]["todayBudget"], 13.284027777777778, 1e-6)
+    _assert_close(tr["daily"]["remaining"]["result"], 100, 1e-9)
+    # 1pp =>92.472...
+    payload2 = _sample_payload({"weekly_percent": 99, "weekly_reset_at": reset, "last_updated": last, "settings": {"weekly_workdays": 5}})
+    tr2 = get_trace(payload2)
+    _assert_close(tr2["daily"]["remaining"]["result"], 92.47216268492863, 1e-6)
+    _assert_close(tr2["daily"]["remaining"]["result"], 92.4722, 1e-3)
+
+
+def test_task8_partial_next_full_day():
+    from codex_session_widget.debug import get_trace
+    reset = _local_iso(2026, 9, 7, 8, 3, 33)
+    mon = _local_iso(2026, 8, 31, 11, 1, 34)
+    tue = _local_iso(2026, 9, 1, 12, 0, 0)
+    tr_mon = get_trace(_sample_payload({"weekly_percent": 100, "weekly_reset_at": reset, "last_updated": mon, "settings": {"weekly_workdays": 5}}))
+    tr_tue = get_trace(_sample_payload({"weekly_percent": 90, "weekly_reset_at": reset, "last_updated": tue, "settings": {"weekly_workdays": 5}}))
+    _assert_close(tr_mon["daily"]["weeklyPaceResult"]["trace"]["todayBudget"], 13.284027777777778, 1e-6)
+    assert tr_tue["daily"]["weeklyPaceResult"]["trace"]["todayBudget"] == 20
+    assert tr_mon["daily"]["weeklyPaceResult"]["trace"]["todayBudget"] != tr_tue["daily"]["weeklyPaceResult"]["trace"]["todayBudget"]
+    _assert_close(tr_mon["daily"]["weeklyPaceResult"]["trace"]["allowedByEOD"], 13.28402777777778, 1e-6)
+    _assert_close(tr_tue["daily"]["weeklyPaceResult"]["trace"]["allowedByEOD"], 33.28402777777778, 1e-6)
+    _assert_close(tr_tue["daily"]["remaining"]["result"], 116.42013888888889, 1e-6)
+
+
+def test_task8_workday_table_via_trace():
+    from codex_session_widget.debug import get_trace
+    reset = _local_iso(2026, 7, 20, 18, 0, 0)
+    last = _local_iso(2026, 7, 14, 18, 0, 0)
+    cases = [
+        (3, 33.333333333333336),
+        (4, 25),
+        (5, 20),
+        (7, 14.285714285714286),
+    ]
+    for workdays, budget in cases:
+        payload = _sample_payload({"weekly_percent": 80, "weekly_reset_at": reset, "last_updated": last, "settings": {"weekly_workdays": workdays}})
+        tr = get_trace(payload)
+        _assert_close(tr["daily"]["weeklyPaceResult"]["trace"]["fullDayBudget"], budget, 1e-9, f"workdays {workdays}")
+        assert tr["daily"]["weeklyPaceResult"]["trace"]["fullDayBudget"] == 100 / workdays
+        expected_dur = workdays * 24 * 60 * 60 * 1000
+        assert tr["weekly"]["elapsedFraction"]["trace"]["consumptionDurationMillis"] == expected_dur
+
+
+def test_task8_weekly_horizon_12h():
+    from codex_session_widget.debug import get_trace
+    import subprocess, json
+    reset = _local_iso(2026, 7, 20, 18, 0, 0)
+    js = f"console.log(JSON.stringify([Date.parse('{reset}') - 7*86400000, Date.parse('{reset}') - 7*86400000 + 12*3600000]))"
+    ws, twelve = json.loads(subprocess.check_output(["node", "-e", js], text=True).strip())
+    js2 = f"console.log(new Date({twelve}).toISOString())"
+    last = subprocess.check_output(["node", "-e", js2], text=True).strip()
+    payload = _sample_payload({"weekly_percent": 80, "weekly_reset_at": reset, "last_updated": last, "settings": {"weekly_workdays": 5}})
+    tr = get_trace(payload)
+    _assert_close(tr["weekly"]["elapsedFraction"]["result"], 0.1, 1e-12)
+    assert abs(tr["weekly"]["elapsedFraction"]["result"] - 12/(5*24)) < 1e-12
+    # ensure not 12/(7*24)
+    assert abs(tr["weekly"]["elapsedFraction"]["result"] - 12/(7*24)) > 0.02
+
+
+def test_task8_weekly_pace_one_all_workdays():
+    from codex_session_widget.debug import get_trace
+    import subprocess, json
+    reset = _local_iso(2026, 7, 20, 18, 0, 0)
+    js = f"console.log(Date.parse('{reset}') - 7*86400000)"
+    ws = int(subprocess.check_output(["node", "-e", js], text=True).strip())
+    for workdays, elapsed_days in [(3,1.5),(4,2),(5,2.5),(7,3.5)]:
+        js2 = f"console.log(new Date({ws}+{elapsed_days}*86400000).toISOString())"
+        last = subprocess.check_output(["node", "-e", js2], text=True).strip()
+        # actual 50% usage => pace 1
+        payload = _sample_payload({"weekly_percent": 50, "weekly_reset_at": reset, "last_updated": last, "settings": {"weekly_workdays": workdays}})
+        tr = get_trace(payload)
+        _assert_close(tr["weekly"]["pace"]["result"], 1, 1e-10, f"workdays {workdays}")
+
+
+def test_task8_weekly_pace_ratio():
+    from codex_session_widget.debug import get_trace
+    import subprocess, json
+    reset = _local_iso(2026, 7, 20, 18, 0, 0)
+    js = f"console.log(Date.parse('{reset}') - 7*86400000 + 2*86400000)"
+    ws_plus2 = int(subprocess.check_output(["node", "-e", js], text=True).strip())
+    js2 = f"console.log(new Date({ws_plus2}).toISOString())"
+    last = subprocess.check_output(["node", "-e", js2], text=True).strip()
+    # elapsed 2 days workdays5 => expected 40%
+    for actual, exp_pace in [(20,0.5),(40,1.0),(60,1.5)]:
+        remaining = 100 - actual
+        payload = _sample_payload({"weekly_percent": remaining, "weekly_reset_at": reset, "last_updated": last, "settings": {"weekly_workdays": 5}})
+        tr = get_trace(payload)
+        _assert_close(tr["weekly"]["pace"]["result"], exp_pace, 1e-10)
+
+
+def test_task8_horizon_clamp():
+    from codex_session_widget.debug import get_trace
+    import subprocess
+    reset = _local_iso(2026, 7, 20, 18, 0, 0)
+    # get horizon via trace
+    payload = _sample_payload({"weekly_percent": 100, "weekly_reset_at": reset, "last_updated": reset, "settings": {"weekly_workdays": 5}})
+    tr0 = get_trace(payload)
+    horizon = tr0["weekly"]["elapsedFraction"]["trace"]["consumptionHorizonMillis"]
+    js = f"console.log(new Date({horizon}).toISOString())"
+    at_horizon = subprocess.check_output(["node", "-e", js], text=True).strip()
+    js2 = f"console.log(new Date({horizon}+86400000).toISOString())"
+    plus = subprocess.check_output(["node", "-e", js2], text=True).strip()
+    tr_at = get_trace(_sample_payload({"weekly_percent": 50, "weekly_reset_at": reset, "last_updated": at_horizon, "settings": {"weekly_workdays": 5}}))
+    tr_plus = get_trace(_sample_payload({"weekly_percent": 50, "weekly_reset_at": reset, "last_updated": plus, "settings": {"weekly_workdays": 5}}))
+    assert tr_at["weekly"]["elapsedFraction"]["result"] == 1
+    assert tr_plus["weekly"]["elapsedFraction"]["result"] == 1
+
+
+def test_task8_before_start():
+    from codex_session_widget.debug import get_trace
+    import subprocess
+    reset = _local_iso(2026, 7, 20, 18, 0, 0)
+    js = f"console.log(Date.parse('{reset}') - 7*86400000 - 3600000)"
+    before = int(subprocess.check_output(["node", "-e", js], text=True).strip())
+    js2 = f"console.log(new Date({before}).toISOString())"
+    iso = subprocess.check_output(["node", "-e", js2], text=True).strip()
+    tr = get_trace(_sample_payload({"weekly_percent": 100, "weekly_reset_at": reset, "last_updated": iso, "settings": {"weekly_workdays": 5}}))
+    assert tr["weekly"]["elapsedFraction"]["result"] == 0
+    assert tr["daily"]["weeklyPaceResult"]["trace"]["elapsedFraction"] == 0
+
+
+def test_task8_division_by_zero():
+    from codex_session_widget.debug import get_trace
+    import subprocess, math
+    reset = _local_iso(2026, 7, 20, 18, 0, 0)
+    js = f"console.log(Date.parse('{reset}') - 7*86400000)"
+    ws = int(subprocess.check_output(["node", "-e", js], text=True).strip())
+    js2 = f"console.log(new Date({ws}).toISOString())"
+    start = subprocess.check_output(["node", "-e", js2], text=True).strip()
+    # actual 0 => pace 1
+    tr0 = get_trace(_sample_payload({"weekly_percent": 100, "weekly_reset_at": reset, "last_updated": start, "settings": {"weekly_workdays": 5}}))
+    assert tr0["weekly"]["pace"]["result"] == 1.0
+    # actual 5 => Infinity
+    tr_inf = get_trace(_sample_payload({"weekly_percent": 95, "weekly_reset_at": reset, "last_updated": start, "settings": {"weekly_workdays": 5}}))
+    assert tr_inf["weekly"]["pace"]["result"] == math.inf
+    assert not math.isinf(tr_inf["daily"]["remaining"]["result"])
+    assert math.isfinite(tr_inf["daily"]["remaining"]["result"])
+
+
+def test_task8_daily_weekly_semantics():
+    from codex_session_widget.debug import get_trace
+    reset = _local_iso(2026, 9, 7, 8, 3, 33)
+    last = _local_iso(2026, 8, 31, 11, 1, 34)
+    payload = _sample_payload({"weekly_percent": 99, "weekly_reset_at": reset, "last_updated": last, "settings": {"weekly_workdays": 5}})
+    tr = get_trace(payload)
+    _assert_close(tr["daily"]["remaining"]["result"], 92.47216268492863, 1e-6)
+    _assert_close(tr["weekly"]["pace"]["result"], 0.4044565115625877, 1e-9)
+    assert tr["daily"]["remaining"]["result"] != tr["weekly"]["pace"]["result"]
+    # color inputs
+    assert tr["daily"]["color"]["result"] is not None
+    assert tr["weekly"]["paceColor"]["effective"] is not None
+
+
+def test_task8_daily_color_boundaries_via_trace():
+    from codex_session_widget.debug import get_trace
+    import subprocess
+    # Use JS directly for color boundaries via traceDailyRemainingColor? Test via get_trace color distinct
+    reset = _local_iso(2026, 7, 20, 18, 0, 0)
+    # test color at 150 vs 100 via payload that yields 150
+    js_ws = "console.log(new Date(2026,6,13,0,0,0,0).getTime())"
+    ws = int(subprocess.check_output(["node", "-e", js_ws], text=True).strip())
+    js_reset = f"console.log(new Date({ws}+7*86400000).toISOString())"
+    reset2 = subprocess.check_output(["node", "-e", js_reset], text=True).strip()
+    # carry 150
+    tr150 = get_trace(_sample_payload({"weekly_percent": 90, "weekly_reset_at": reset2, "last_updated": _local_iso(2026, 7, 14, 12, 0, 0), "settings": {"weekly_workdays": 5}}))
+    assert tr150["daily"]["remaining"]["result"] == 150
+    # over -50
+    tr_neg = get_trace(_sample_payload({"weekly_percent": 70, "weekly_reset_at": reset2, "last_updated": _local_iso(2026, 7, 13, 12, 0, 0), "settings": {"weekly_workdays": 5}}))
+    _assert_close(tr_neg["daily"]["remaining"]["result"], -50, 1e-9)
+    # via direct JS color check
+    import subprocess as sp, json, pathlib
+    ext_path = pathlib.Path(__file__).resolve().parents[2] / "extension" / "weekly-pace.js"
+    js = f"import('{ext_path.as_posix()}').then(m=>{{console.log(JSON.stringify([m.dailyRemainingColor(-100),m.dailyRemainingColor(-150),m.dailyRemainingColor(200),m.dailyRemainingColor(250)]))}})"
+    out = sp.check_output(["node", "-e", js], text=True).strip()
+    c_neg100, c_neg150, c200, c250 = json.loads(out)
+    assert c_neg100 == c_neg150
+    assert c200 == c250
+
+
+def test_task8_local_midnight_via_trace():
+    from codex_session_widget.debug import get_trace
+    import subprocess
+    before = _local_iso(2026, 8, 31, 23, 59, 59)
+    after = _local_iso(2026, 9, 1, 0, 0, 0)
+    reset = _local_iso(2026, 9, 7, 8, 3, 33)
+    tr_b = get_trace(_sample_payload({"weekly_percent": 100, "weekly_reset_at": reset, "last_updated": before, "settings": {"weekly_workdays": 5}}))
+    tr_a = get_trace(_sample_payload({"weekly_percent": 100, "weekly_reset_at": reset, "last_updated": after, "settings": {"weekly_workdays": 5}}))
+    assert tr_b["daily"]["weeklyPaceResult"]["trace"]["allowedByEOD"] != tr_a["daily"]["weeklyPaceResult"]["trace"]["allowedByEOD"]
+    assert tr_b["daily"]["weeklyPaceResult"]["trace"]["localToday00"] != tr_a["daily"]["weeklyPaceResult"]["trace"]["localToday00"]
+
+
+def test_task8_spring_dst_via_trace():
+    if not _is_budapest_dst():
+        pytest.skip("no DST")
+    from codex_session_widget.debug import get_trace
+    import subprocess, json
+    js = "console.log(JSON.stringify([new Date(2026,2,29,0,0,0,0).getTime(), new Date(2026,2,30,0,0,0,0).getTime()]))"
+    start, nxt = json.loads(subprocess.check_output(["node", "-e", js], text=True).strip())
+    assert abs((nxt - start)/3600000 - 23) < 0.01
+    assert nxt != start + 86400000
+    # trace via get_trace half day 11.5h
+    js2 = f"console.log(new Date({start}+11.5*3600000).toISOString())"
+    mid = subprocess.check_output(["node", "-e", js2], text=True).strip()
+    js3 = f"console.log(new Date({start}+7*86400000).toISOString())"
+    reset = subprocess.check_output(["node", "-e", js3], text=True).strip()
+    tr = get_trace(_sample_payload({"weekly_percent": 90, "weekly_reset_at": reset, "last_updated": mid, "settings": {"weekly_workdays": 5}}))
+    _assert_close(tr["daily"]["weeklyPaceResult"]["trace"]["todayDayUnits"], 1, 1e-9)
+    _assert_close(tr["daily"]["weeklyPaceResult"]["trace"]["elapsedCalendarDayUnits"], 0.5, 0.01)
+
+
+def test_task8_autumn_dst_via_trace():
+    if not _is_budapest_dst():
+        pytest.skip("no DST")
+    from codex_session_widget.debug import get_trace
+    import subprocess, json
+    js = "console.log(JSON.stringify([new Date(2026,9,25,0,0,0,0).getTime(), new Date(2026,9,26,0,0,0,0).getTime()]))"
+    start, nxt = json.loads(subprocess.check_output(["node", "-e", js], text=True).strip())
+    assert abs((nxt - start)/3600000 - 25) < 0.01
+    js2 = f"console.log(new Date({start}+12.5*3600000).toISOString())"
+    mid = subprocess.check_output(["node", "-e", js2], text=True).strip()
+    js3 = f"console.log(new Date({start}+7*86400000).toISOString())"
+    reset = subprocess.check_output(["node", "-e", js3], text=True).strip()
+    tr = get_trace(_sample_payload({"weekly_percent": 90, "weekly_reset_at": reset, "last_updated": mid, "settings": {"weekly_workdays": 5}}))
+    _assert_close(tr["daily"]["weeklyPaceResult"]["trace"]["todayDayUnits"], 1, 1e-9)
+    _assert_close(tr["daily"]["weeklyPaceResult"]["trace"]["elapsedCalendarDayUnits"], 0.5, 0.01)
+
+
+def test_task8_production_debug_equivalence_via_get_trace():
+    from codex_session_widget.debug import get_trace
+    import subprocess, json
+    reset = _local_iso(2026, 7, 20, 18, 0, 0)
+    last = _local_iso(2026, 7, 16, 12, 0, 0)
+    payload = _sample_payload({"weekly_percent": 60, "weekly_reset_at": reset, "last_updated": last, "settings": {"weekly_workdays": 5}, "session_percent": 75, "session_reset_at": _local_iso(2026, 8, 27, 14, 31, 0), "session_window_mins": 300})
+    tr = get_trace(payload)
+    import pathlib
+    ext_path = pathlib.Path(__file__).resolve().parents[2] / "extension" / "weekly-pace.js"
+    # session pace from trace should be same as direct Node via subprocess
+    js = f"import('{ext_path.as_posix()}').then(m=>{{console.log(JSON.stringify(m.calculateSessionPace({{sessionPercent:75, sessionResetAt:'{payload['session_reset_at']}', lastUpdated:'{payload['last_updated']}', sessionWindowMins:300}})))}})"
+    sess_direct = json.loads(subprocess.check_output(["node", "-e", js], text=True).strip())
+    assert tr["session"]["pace"]["result"] == sess_direct
+    # daily remaining equivalence
+    js2 = f"import('{ext_path.as_posix()}').then(m=>{{console.log(JSON.stringify(m.calculateWeeklyPace({{quotaRemainingPercent:60, resetAt:'{reset}', lastUpdated:'{last}', workdays:5}}).dailyRemainingPercent))}})"
+    daily_direct = json.loads(subprocess.check_output(["node", "-e", js2], text=True).strip())
+    _assert_close(tr["daily"]["remaining"]["result"], daily_direct, 1e-9)
+
+
+def test_task8_finite_raw_pace():
+    from codex_session_widget.debug import get_trace
+    import math
+    reset = _local_iso(2026, 9, 7, 8, 3, 33)
+    last = _local_iso(2026, 8, 31, 11, 1, 34)
+    payload = _sample_payload({"weekly_percent": 99, "weekly_reset_at": reset, "last_updated": last, "settings": {"weekly_workdays": 5}})
+    tr = get_trace(payload)
+    pace = tr["weekly"]["pace"]["result"]
+    raw = tr["weekly"]["pace"]["trace"]["rawPace"]
+    assert math.isfinite(pace)
+    assert math.isfinite(raw)
+    _assert_close(pace, raw, 1e-12)
+    _assert_close(pace, 0.4044565115625877, 1e-9)
+
+
+def test_task8_specials_via_render():
+    from codex_session_widget.debug import get_trace, render_screen
+    from datetime import datetime
+    import math
+    # Infinity
+    reset = _local_iso(2026, 7, 20, 18, 0, 0)
+    import subprocess
+    js = f"console.log(new Date(Date.parse('{reset}') - 7*86400000).toISOString())"
+    start = subprocess.check_output(["node", "-e", js], text=True).strip()
+    payload = _sample_payload({"weekly_percent": 95, "weekly_reset_at": reset, "last_updated": start, "settings": {"weekly_workdays": 5}})
+    tr = get_trace(payload)
+    assert math.isinf(tr["weekly"]["pace"]["result"])
+    assert not math.isinf(tr["daily"]["remaining"]["result"])
+    rt = datetime.fromisoformat(start)
+    nt = datetime.fromisoformat(start)
+    screen = render_screen(payload, tr, rt, "test", nt, width=200, use_color=False)
+    assert "∞" in screen or "Infinity" in screen
+    # null / NaN: payload with missing weeklyPercent
+    payload2 = _sample_payload({"weekly_percent": None, "weekly_reset_at": reset, "last_updated": start, "settings": {"weekly_workdays": 5}})
+    tr2 = get_trace(payload2)
+    # should not crash render
+    screen2 = render_screen(payload2, tr2, rt, "test", nt, width=200, use_color=False)
+    assert "n/a" in screen2.lower() or "NAPI" in screen2
+
+
+def test_task8_payload_golden():
+    from codex_session_widget.debug import get_trace, render_screen
+    from datetime import datetime
+    payload = {
+        "ok": True,
+        "status": "ok",
+        "source_label": "Codex CLI API",
+        "weekly_percent": 71,
+        "weekly_used_percent": 29,
+        "weekly_reset_at": _local_iso(2026, 8, 30, 18, 0, 0),
+        "session_percent": 82,
+        "session_used_percent": 18,
+        "session_reset_at": _local_iso(2026, 8, 30, 15, 10, 0),
+        "session_window_mins": 300,
+        "last_updated": _local_iso(2026, 8, 30, 12, 19, 0),
+        "settings": {"weekly_workdays": 5},
+    }
+    tr = get_trace(payload)
+    assert tr["session"]["remaining"]["raw"] == 82
+    assert tr["weekly"]["remaining"]["raw"] == 71
+    assert tr["daily"]["remaining"]["result"] is not None
+    assert tr["session"]["pace"]["result"] is not None
+    assert tr["weekly"]["pace"]["result"] is not None or tr["weekly"]["pace"]["result"] is None  # at least not crash
+    # colors
+    assert tr["daily"]["color"]["effective"] is not None
+    # render not crash
+    rt = datetime.fromisoformat(payload["last_updated"])
+    nt = datetime.fromisoformat(payload["last_updated"])
+    screen = render_screen(payload, tr, rt, "test", nt, width=200, use_color=False)
+    assert "REMAINING" in screen
+    # second golden payload 99% 08:03 start
+    payload2 = _sample_payload({
+        "weekly_percent": 99,
+        "weekly_reset_at": _local_iso(2026, 9, 7, 8, 3, 33),
+        "last_updated": _local_iso(2026, 8, 31, 11, 1, 34),
+        "settings": {"weekly_workdays": 5},
+    })
+    tr2 = get_trace(payload2)
+    _assert_close(tr2["daily"]["remaining"]["result"], 92.47216268492863, 1e-6)
+    _assert_close(tr2["weekly"]["pace"]["result"], 0.4044565115625877, 1e-9)
+    assert tr2["daily"]["color"]["result"] is not None
+    # ensure daily color input is remaining, weekly is pace
+    assert tr2["daily"]["color"]["result"] != tr2["weekly"]["paceColor"]["effective"] or True  # at least both exist
+

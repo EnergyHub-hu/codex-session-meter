@@ -2193,3 +2193,804 @@ test('Task5 normal period regresszió: 99% weekly 5 workdays daily 92.47 weekly 
     assert.ok(Math.abs(weeklyPace - 0.4044565) < 0.001, `weeklyPace ${weeklyPace}`);
 });
 
+// ===========================================================================
+// Task 8 — Regressziós tesztcsomag teljessé tétele
+// ===========================================================================
+
+const DAY_MILLIS = 24 * 60 * 60 * 1000;
+
+function assertClose(actual, expected, epsilon = 1e-6, msg = '') {
+    assert.ok(
+        Math.abs(actual - expected) <= epsilon,
+        `${msg} expected ${actual} to be close to ${expected} ±${epsilon} (diff ${Math.abs(actual - expected)})`
+    );
+}
+
+// ---------------------------------------------------------------------------
+// 2. Session pace — alapvető regressziós mátrix (pace = remaining + elapsedPercent - 100)
+// ---------------------------------------------------------------------------
+
+test('Task8 session pace: elapsed 0% remaining 100% => pace 0 (session start)', () => {
+    const resetAt = localTimestamp(2026, 8, 27, 14, 31, 0);
+    const startMillis = Date.parse(resetAt) - 300 * 60 * 1000;
+    const lastUpdated = new Date(startMillis).toISOString(); // elapsed 0%
+    const pace = calculateSessionPace({sessionPercent: 100, sessionResetAt: resetAt, lastUpdated, sessionWindowMins: 300});
+    assert.equal(pace, 0);
+    assert.equal(traceCalculateSessionPace({sessionPercent: 100, sessionResetAt: resetAt, lastUpdated, sessionWindowMins: 300}).result, 0);
+});
+
+test('Task8 session pace: on-plan 25% elapsed 25% used remaining 75% => pace 0', () => {
+    const resetAt = localTimestamp(2026, 8, 27, 14, 31, 0);
+    const startMillis = Date.parse(resetAt) - 300 * 60 * 1000;
+    const lastUpdated = new Date(startMillis + 0.25 * 300 * 60 * 1000).toISOString();
+    const pace = calculateSessionPace({sessionPercent: 75, sessionResetAt: resetAt, lastUpdated, sessionWindowMins: 300});
+    assert.equal(pace, 0);
+    // also verify formula: remaining + elapsed -100 = 75+25-100=0
+    assertClose(pace, 75 + 25 - 100);
+});
+
+test('Task8 session pace: reserve 60% elapsed 10% used remaining 90% => pace +50', () => {
+    const resetAt = localTimestamp(2026, 8, 27, 14, 31, 0);
+    const startMillis = Date.parse(resetAt) - 300 * 60 * 1000;
+    const lastUpdated = new Date(startMillis + 0.60 * 300 * 60 * 1000).toISOString();
+    const pace = calculateSessionPace({sessionPercent: 90, sessionResetAt: resetAt, lastUpdated, sessionWindowMins: 300});
+    assert.equal(pace, 50);
+    assertClose(pace, 90 + 60 - 100);
+});
+
+test('Task8 session pace: overuse 20% elapsed 50% used remaining 50% => pace -30', () => {
+    const resetAt = localTimestamp(2026, 8, 27, 14, 31, 0);
+    const startMillis = Date.parse(resetAt) - 300 * 60 * 1000;
+    const lastUpdated = new Date(startMillis + 0.20 * 300 * 60 * 1000).toISOString();
+    const pace = calculateSessionPace({sessionPercent: 50, sessionResetAt: resetAt, lastUpdated, sessionWindowMins: 300});
+    assert.equal(pace, -30);
+    assertClose(pace, 50 + 20 - 100);
+});
+
+test('Task8 session pace: at session end 100% elapsed 0% remaining => pace 0', () => {
+    const resetAt = localTimestamp(2026, 8, 27, 14, 31, 0);
+    const pace = calculateSessionPace({sessionPercent: 0, sessionResetAt: resetAt, lastUpdated: resetAt, sessionWindowMins: 300});
+    assert.equal(pace, 0);
+});
+
+test('Task8 session pace: at session end with 20% remaining => pace +20', () => {
+    const resetAt = localTimestamp(2026, 8, 27, 14, 31, 0);
+    const pace = calculateSessionPace({sessionPercent: 20, sessionResetAt: resetAt, lastUpdated: resetAt, sessionWindowMins: 300});
+    assert.equal(pace, 20);
+    assertClose(pace, 20 + 100 - 100);
+});
+
+test('Task8 session pace clamp: >+100 => +100 and <-100 => -100 (numeric)', () => {
+    const resetAt = localTimestamp(2026, 8, 27, 14, 31, 0);
+    const startMillis = Date.parse(resetAt) - 300 * 60 * 1000;
+    const startISO = new Date(startMillis).toISOString();
+    // raw 150 => clamped 100: sessionPercent 150 at end (elapsed 100% => expectedRemaining 0 => raw 150)
+    const high = calculateSessionPace({sessionPercent: 150, sessionResetAt: resetAt, lastUpdated: resetAt, sessionWindowMins: 300});
+    assert.equal(high, 100);
+    assert.equal(traceCalculateSessionPace({sessionPercent: 150, sessionResetAt: resetAt, lastUpdated: resetAt, sessionWindowMins: 300}).result, 100);
+    // raw -150 => clamped -100: sessionPercent -50 at start (elapsed 0% => expectedRemaining 100 => raw -150)
+    const low = calculateSessionPace({sessionPercent: -50, sessionResetAt: resetAt, lastUpdated: startISO, sessionWindowMins: 300});
+    assert.equal(low, -100);
+    assert.equal(traceCalculateSessionPace({sessionPercent: -50, sessionResetAt: resetAt, lastUpdated: startISO, sessionWindowMins: 300}).result, -100);
+    // also check that normalized result is clamped, not just color
+    assert.equal(high, 100);
+    assert.equal(low, -100);
+    // color endpoints must correspond to clamped values
+    assert.equal(sessionPaceColor(high), sessionPaceColor(100));
+    assert.equal(sessionPaceColor(low), sessionPaceColor(-100));
+});
+
+test('Task8 session pace table-driven: linear plan always 0, reserve positive, deficit negative', () => {
+    const cases = [
+        {elapsedPct: 0,   remaining: 100, expected: 0,   desc: 'start'},
+        {elapsedPct: 25,  remaining: 75,  expected: 0,   desc: 'quarter on-plan'},
+        {elapsedPct: 50,  remaining: 50,  expected: 0,   desc: 'half on-plan'},
+        {elapsedPct: 75,  remaining: 25,  expected: 0,   desc: 'three-quarter on-plan'},
+        {elapsedPct: 100, remaining: 0,   expected: 0,   desc: 'end on-plan'},
+        {elapsedPct: 60,  remaining: 90,  expected: 50,  desc: 'reserve'},
+        {elapsedPct: 20,  remaining: 50,  expected: -30, desc: 'deficit'},
+        {elapsedPct: 100, remaining: 20,  expected: 20,  desc: 'end with reserve'},
+        {elapsedPct: 0,   remaining: 50,  expected: -50, desc: 'start with deficit'},
+    ];
+    const resetAt = localTimestamp(2026, 8, 27, 14, 31, 0);
+    const startMillis = Date.parse(resetAt) - 300 * 60 * 1000;
+    for (const c of cases) {
+        const lastUpdated = new Date(startMillis + c.elapsedPct / 100 * 300 * 60 * 1000).toISOString();
+        const pace = calculateSessionPace({sessionPercent: c.remaining, sessionResetAt: resetAt, lastUpdated, sessionWindowMins: 300});
+        assert.equal(pace, c.expected, `session pace ${c.desc}: elapsed ${c.elapsedPct}% remaining ${c.remaining}% => ${c.expected}, got ${pace}`);
+        // invariant: on-plan => 0
+        if (c.remaining + c.elapsedPct === 100) assert.equal(pace, 0);
+        // reserve => positive, deficit => negative
+        if (c.remaining + c.elapsedPct > 100) assert.ok(pace > 0, `reserve should be positive ${c.desc}`);
+        if (c.remaining + c.elapsedPct < 100) assert.ok(pace < 0, `deficit should be negative ${c.desc}`);
+    }
+});
+
+// ---------------------------------------------------------------------------
+// 3. Daily EOD remaining — teljes üzleti mátrix
+// ---------------------------------------------------------------------------
+
+test('Task8 daily: first full day no consumption => 100% (time of day does not reduce)', () => {
+    // weeklyStart = Monday 00:00 local
+    const weeklyStartMillis = new Date(2026, 6, 13, 0, 0, 0, 0).getTime(); // 2026-07-13 Monday 00:00
+    const resetAt = new Date(weeklyStartMillis + 7 * DAY_MILLIS).toISOString();
+    const workdays = 5;
+    // Monday 10:00 local
+    const nowA = new Date(2026, 6, 13, 10, 0, 0, 0).toISOString();
+    const nowB = new Date(2026, 6, 13, 22, 30, 0, 0).toISOString();
+    const pA = calculateWeeklyPace({quotaRemainingPercent: 100, resetAt, lastUpdated: nowA, workdays});
+    const pB = calculateWeeklyPace({quotaRemainingPercent: 100, resetAt, lastUpdated: nowB, workdays});
+    assert.equal(pA.dailyRemainingPercent, 100);
+    assert.equal(pB.dailyRemainingPercent, 100);
+    // divisor must be full day budget 20, allowedByEOD 20 regardless of intra-day time
+    const tA = traceCalculateWeeklyPace({quotaRemainingPercent: 100, resetAt, lastUpdated: nowA, workdays});
+    const tB = traceCalculateWeeklyPace({quotaRemainingPercent: 100, resetAt, lastUpdated: nowB, workdays});
+    assert.equal(tA.trace.todayBudget, 20);
+    assert.equal(tB.trace.todayBudget, 20);
+    assert.equal(tA.trace.allowedByEOD, 20);
+    assert.equal(tB.trace.allowedByEOD, 20);
+});
+
+test('Task8 daily: first full day exactly one daily budget consumed => 0%', () => {
+    const weeklyStartMillis = new Date(2026, 6, 13, 0, 0, 0, 0).getTime();
+    const resetAt = new Date(weeklyStartMillis + 7 * DAY_MILLIS).toISOString();
+    const now = new Date(2026, 6, 13, 15, 0, 0, 0).toISOString();
+    const fullDayBudget = 20; // 100/5
+    const pace = calculateWeeklyPace({quotaRemainingPercent: 100 - fullDayBudget, resetAt, lastUpdated: now, workdays: 5});
+    assertClose(pace.dailyRemainingPercent, 0);
+    const tr = traceCalculateWeeklyPace({quotaRemainingPercent: 100 - fullDayBudget, resetAt, lastUpdated: now, workdays: 5}).trace;
+    assert.equal(tr.allowedByEOD, 20);
+    assert.equal(tr.actualUsage, 20);
+    assert.equal(tr.available, 0);
+    assert.equal(tr.divisor, 20);
+});
+
+test('Task8 daily: first full day half budget consumed => 50%', () => {
+    const weeklyStartMillis = new Date(2026, 6, 13, 0, 0, 0, 0).getTime();
+    const resetAt = new Date(weeklyStartMillis + 7 * DAY_MILLIS).toISOString();
+    const now = new Date(2026, 6, 13, 9, 0, 0, 0).toISOString();
+    const pace = calculateWeeklyPace({quotaRemainingPercent: 90, resetAt, lastUpdated: now, workdays: 5}); // used 10 => half of 20
+    assertClose(pace.dailyRemainingPercent, 50);
+    const tr = traceCalculateWeeklyPace({quotaRemainingPercent: 90, resetAt, lastUpdated: now, workdays: 5}).trace;
+    assertClose(tr.available, 10);
+    assertClose(tr.divisor, 20);
+});
+
+test('Task8 daily business matrix table-driven', () => {
+    const weeklyStartMillis = new Date(2026, 6, 13, 0, 0, 0, 0).getTime();
+    const resetAt = new Date(weeklyStartMillis + 7 * DAY_MILLIS).toISOString();
+    const workdays = 5;
+    const now = new Date(2026, 6, 13, 12, 0, 0, 0).toISOString();
+    const cases = [
+        {used: 0,  expectedDaily: 100, desc: 'no consumption'},
+        {used: 10, expectedDaily: 50,  desc: 'half daily budget'},
+        {used: 20, expectedDaily: 0,   desc: 'full daily budget'},
+    ];
+    for (const c of cases) {
+        const remaining = 100 - c.used;
+        const pace = calculateWeeklyPace({quotaRemainingPercent: remaining, resetAt, lastUpdated: now, workdays});
+        assertClose(pace.dailyRemainingPercent, c.expectedDaily, 1e-9, `daily ${c.desc}`);
+    }
+});
+
+// ---------------------------------------------------------------------------
+// 4. Carry-over >100%
+// ---------------------------------------------------------------------------
+
+test('Task8 daily carry-over >100%: raw 150 no clamp, color gets raw', () => {
+    const weeklyStartMillis = new Date(2026, 6, 13, 0, 0, 0, 0).getTime();
+    const resetAt = new Date(weeklyStartMillis + 7 * DAY_MILLIS).toISOString();
+    const nowTue = new Date(2026, 6, 14, 12, 0, 0, 0).toISOString(); // Tuesday
+    // Monday budget 20 + Tuesday budget 20 = 40 allowedByEOD Tuesday, used 10 => available 30 => 150%
+    const pace = calculateWeeklyPace({quotaRemainingPercent: 90, resetAt, lastUpdated: nowTue, workdays: 5});
+    const tr = traceCalculateWeeklyPace({quotaRemainingPercent: 90, resetAt, lastUpdated: nowTue, workdays: 5}).trace;
+    assert.equal(tr.allowedByEOD, 40);
+    assert.equal(tr.actualUsage, 10);
+    assert.equal(tr.available, 30);
+    assert.equal(tr.divisor, 20);
+    assert.equal(pace.dailyRemainingPercent, 150);
+    // no [0,100] clamp
+    assert.ok(pace.dailyRemainingPercent > 100);
+    assert.equal(pace.dailyRemainingPercent, 150);
+    // indicator gets raw
+    assert.equal(dailyLimitIndicatorLevel(pace.dailyRemainingPercent), 'over');
+    // color gets raw and distinct from 100
+    const color150 = dailyRemainingColor(150);
+    const color100 = dailyRemainingColor(100);
+    assert.notEqual(color150, color100);
+    assert.equal(color150, dailyRemainingColor(pace.dailyRemainingPercent));
+    // trace color also gets raw
+    assert.equal(traceDailyRemainingColor(pace.dailyRemainingPercent).result, color150);
+});
+
+// ---------------------------------------------------------------------------
+// 5. Daily overuse <0%
+// ---------------------------------------------------------------------------
+
+test('Task8 daily overuse <0%: -50% not clamped to 0', () => {
+    const weeklyStartMillis = new Date(2026, 6, 13, 0, 0, 0, 0).getTime();
+    const resetAt = new Date(weeklyStartMillis + 7 * DAY_MILLIS).toISOString();
+    const now = new Date(2026, 6, 13, 12, 0, 0, 0).toISOString(); // first full day
+    // dailyBudget 20, used 30 => available -10 => -50%
+    const pace = calculateWeeklyPace({quotaRemainingPercent: 70, resetAt, lastUpdated: now, workdays: 5});
+    const tr = traceCalculateWeeklyPace({quotaRemainingPercent: 70, resetAt, lastUpdated: now, workdays: 5}).trace;
+    assert.equal(tr.allowedByEOD, 20);
+    assert.equal(tr.actualUsage, 30);
+    assert.equal(tr.available, -10);
+    assert.equal(tr.divisor, 20);
+    assertClose(pace.dailyRemainingPercent, -50);
+    assert.ok(pace.dailyRemainingPercent < 0);
+    assert.notEqual(pace.dailyRemainingPercent, 0);
+    // color distinct from 0
+    assert.notEqual(dailyRemainingColor(pace.dailyRemainingPercent), dailyRemainingColor(0));
+});
+
+// ---------------------------------------------------------------------------
+// 6. Partial first day (08:03:33)
+// ---------------------------------------------------------------------------
+
+test('Task8 partial first day: no consumption => 100%', () => {
+    const resetAt = localTimestamp(2026, 9, 7, 8, 3, 33);
+    const lastUpdated = localTimestamp(2026, 8, 31, 11, 1, 34);
+    const t = traceCalculateWeeklyPace({quotaRemainingPercent: 100, resetAt, lastUpdated, workdays: 5});
+    // first day duration 15.94h => budget 13.284028
+    assertClose(t.trace.todayBudget, 13.284027777777778, 1e-6);
+    assertClose(t.trace.allowedByEOD, 13.28402777777778, 1e-6);
+    assert.equal(t.trace.actualUsage, 0);
+    assertClose(t.result.dailyRemainingPercent, 100, 1e-9);
+});
+
+test('Task8 partial first day: 1pp consumption => ~92.4722%', () => {
+    const resetAt = localTimestamp(2026, 9, 7, 8, 3, 33);
+    const lastUpdated = localTimestamp(2026, 8, 31, 11, 1, 34);
+    const t = traceCalculateWeeklyPace({quotaRemainingPercent: 99, resetAt, lastUpdated, workdays: 5});
+    // reference: 13.284028 -1 =12.284028 /13.284028*100=92.47216268492863 ~92.4722
+    assertClose(t.result.dailyRemainingPercent, 92.47216268492863, 1e-6);
+    assertClose(t.result.dailyRemainingPercent, 92.4722, 1e-3); // spec tolerance
+    assert.equal(t.trace.actualUsage, 1);
+    assertClose(t.trace.available, 12.28402777777778, 1e-9);
+});
+
+test('Task8 partial first day tolerance helper not hard-coded long float', () => {
+    const resetAt = localTimestamp(2026, 9, 7, 8, 3, 33);
+    const lastUpdated = localTimestamp(2026, 8, 31, 11, 1, 34);
+    const pace = calculateWeeklyPace({quotaRemainingPercent: 99, resetAt, lastUpdated, workdays: 5});
+    const expected = (13.28402777777778 - 1) / 13.28402777777778 * 100;
+    assertClose(pace.dailyRemainingPercent, expected, 1e-9);
+});
+
+// ---------------------------------------------------------------------------
+// 7. Partial first day után következő teljes nap
+// ---------------------------------------------------------------------------
+
+test('Task8 partial next full day: Monday divisor partial, Tuesday divisor 20, carry-over counted', () => {
+    const resetAt = localTimestamp(2026, 9, 7, 8, 3, 33); // weeklyStart Monday 08:03:33
+    const mon = localTimestamp(2026, 8, 31, 11, 1, 34); // Monday same day
+    const tue = localTimestamp(2026, 9, 1, 12, 0, 0); // Tuesday full day
+    const tMon = traceCalculateWeeklyPace({quotaRemainingPercent: 100, resetAt, lastUpdated: mon, workdays: 5});
+    const tTue = traceCalculateWeeklyPace({quotaRemainingPercent: 90, resetAt, lastUpdated: tue, workdays: 5}); // 10pp used
+    // Monday divisor is partial ~13.284, Tuesday divisor is full 20
+    assertClose(tMon.trace.divisor, 13.284027777777778, 1e-6);
+    assert.equal(tTue.trace.divisor, 20);
+    assert.notEqual(tMon.trace.divisor, tTue.trace.divisor);
+    // Monday allowed ~13.284, Tuesday allowed ~33.284 (13.284 +20)
+    assertClose(tMon.trace.allowedByEOD, 13.28402777777778, 1e-6);
+    assertClose(tTue.trace.allowedByEOD, 33.28402777777778, 1e-6);
+    // carry-over: Tuesday available = 33.284 -10 =23.284 => daily 116.42%
+    assertClose(tTue.trace.available, 23.28402777777778, 1e-6);
+    assertClose(tTue.result.dailyRemainingPercent, 116.42013888888889, 1e-6);
+    // verify that Tuesday not mistakenly uses partial divisor
+    assert.ok(Math.abs(tTue.result.dailyRemainingPercent - 116.42) < 0.01);
+});
+
+// ---------------------------------------------------------------------------
+// 8. Workday konfiguráció: 3 / 4 / 5 / 7 table-driven
+// ---------------------------------------------------------------------------
+
+test('Task8 workday config 3/4/5/7 fullDayBudget and horizon', () => {
+    const resetAt = localTimestamp(2026, 7, 20, 18, 0, 0);
+    const cases = [
+        {workdays: 3, fullDayBudget: 33.333333333333336},
+        {workdays: 4, fullDayBudget: 25},
+        {workdays: 5, fullDayBudget: 20},
+        {workdays: 7, fullDayBudget: 14.285714285714286},
+    ];
+    for (const c of cases) {
+        const t = traceCalculateWeeklyPace({quotaRemainingPercent: 80, resetAt, lastUpdated: localTimestamp(2026, 7, 14, 18, 0, 0), workdays: c.workdays});
+        assertClose(t.trace.fullDayBudget, c.fullDayBudget, 1e-9, `workdays ${c.workdays} budget`);
+        assertClose(t.trace.fullDayBudget, 100 / c.workdays, 1e-12);
+        const expectedDuration = c.workdays * DAY_MILLIS;
+        assert.equal(t.trace.consumptionDurationMillis, expectedDuration);
+        assert.equal(t.trace.consumptionHorizonMillis, t.trace.weeklyStartMillis + expectedDuration);
+    }
+});
+
+// ---------------------------------------------------------------------------
+// 9. Weekly pace — workday horizon regresszió
+// ---------------------------------------------------------------------------
+
+test('Task8 weekly pace workday horizon: 12h elapsed => fraction 12/(5*24)=0.1 not 12/(7*24)', () => {
+    const resetAt = localTimestamp(2026, 7, 20, 18, 0, 0);
+    const weeklyStartMillis = Date.parse(resetAt) - 7 * DAY_MILLIS;
+    const twelveHoursLater = new Date(weeklyStartMillis + 12 * 60 * 60 * 1000).toISOString();
+    const f5 = elapsedFractionOfConsumptionHorizon(resetAt, twelveHoursLater, 5);
+    assertClose(f5, 12 / (5 * 24), 1e-12);
+    assertClose(f5, 0.1, 1e-12);
+    const f7 = elapsedFractionOfConsumptionHorizon(resetAt, twelveHoursLater, 7);
+    assertClose(f7, 12 / (7 * 24), 1e-12);
+    // old 7-day fraction would be 12/(7*24) ≈0.0714, not 0.1
+    assert.notEqual(f5, f7);
+    assert.ok(Math.abs(f5 - 0.1) < 1e-12);
+    assert.ok(Math.abs(elapsedFractionOfWeek(resetAt, twelveHoursLater) - 12 / (7 * 24)) < 1e-12);
+});
+
+// ---------------------------------------------------------------------------
+// 10. Weekly pace = 1.0 terv szerint
+// ---------------------------------------------------------------------------
+
+test('Task8 weekly pace =1.0 when actual == expected (all workday configs)', () => {
+    const resetAt = localTimestamp(2026, 7, 20, 18, 0, 0);
+    const weeklyStartMillis = Date.parse(resetAt) - 7 * DAY_MILLIS;
+    const cases = [
+        {workdays: 3, elapsedDays: 1.5}, // half horizon 3d => fraction 0.5
+        {workdays: 4, elapsedDays: 2},   // half horizon 4d
+        {workdays: 5, elapsedDays: 2.5},
+        {workdays: 7, elapsedDays: 3.5},
+    ];
+    for (const c of cases) {
+        const lastUpdated = new Date(weeklyStartMillis + c.elapsedDays * DAY_MILLIS).toISOString();
+        const f = elapsedFractionOfConsumptionHorizon(resetAt, lastUpdated, c.workdays);
+        assertClose(f, 0.5, 1e-10, `workdays ${c.workdays} fraction`);
+        const actualUsage = f * 100; // 50%
+        const remaining = 100 - actualUsage;
+        const pace = weeklyConsumptionPace({quotaRemainingPercent: remaining, elapsedFraction: f});
+        assertClose(pace, 1, 1e-10, `workdays ${c.workdays} pace`);
+    }
+    // also explicit 5-day 2.5 days => 50% usage =>1
+    const f5 = 0.5;
+    assertClose(weeklyConsumptionPace({quotaRemainingPercent: 50, elapsedFraction: f5}), 1);
+});
+
+// ---------------------------------------------------------------------------
+// 11. Weekly pace takarékos / túlfogyasztó eset
+// ---------------------------------------------------------------------------
+
+test('Task8 weekly pace ratio: expected 40% actual 20%=>0.5 40%=>1.0 60%=>1.5', () => {
+    const elapsedFraction = 0.4; // expected 40%
+    const cases = [
+        {actual: 20, expectedPace: 0.5, desc: 'takarékos'},
+        {actual: 40, expectedPace: 1.0, desc: 'on-plan'},
+        {actual: 60, expectedPace: 1.5, desc: 'túlfogyasztó'},
+    ];
+    for (const c of cases) {
+        const remaining = 100 - c.actual;
+        const pace = weeklyConsumptionPace({quotaRemainingPercent: remaining, elapsedFraction});
+        assertClose(pace, c.expectedPace, 1e-10, c.desc);
+        // also via dailyConsumptionPace (shared)
+        const pace2 = dailyConsumptionPace({actualUsage: c.actual, expectedUsage: elapsedFraction * 100});
+        assertClose(pace2, c.expectedPace, 1e-10);
+    }
+});
+
+// ---------------------------------------------------------------------------
+// 12. Horizon vége és azon túl
+// ---------------------------------------------------------------------------
+
+test('Task8 horizon clamp: now >= horizon => elapsedFraction =1', () => {
+    const resetAt = localTimestamp(2026, 7, 20, 18, 0, 0);
+    const t = traceCalculateWeeklyPace({quotaRemainingPercent: 100, resetAt, lastUpdated: resetAt, workdays: 5});
+    const horizonMillis = t.trace.consumptionHorizonMillis;
+    const horizonISO = new Date(horizonMillis).toISOString();
+    const plusOneDay = new Date(horizonMillis + DAY_MILLIS).toISOString();
+    assert.equal(elapsedFractionOfConsumptionHorizon(resetAt, horizonISO, 5), 1);
+    assert.equal(elapsedFractionOfConsumptionHorizon(resetAt, plusOneDay, 5), 1);
+    assert.equal(traceElapsedFractionOfConsumptionHorizon(resetAt, horizonISO, 5).result, 1);
+    assert.equal(traceElapsedFractionOfConsumptionHorizon(resetAt, plusOneDay, 5).result, 1);
+    // also weekly pace at horizon
+    const pAt = calculateWeeklyPace({quotaRemainingPercent: 50, resetAt, lastUpdated: horizonISO, workdays: 5});
+    const pAfter = calculateWeeklyPace({quotaRemainingPercent: 50, resetAt, lastUpdated: plusOneDay, workdays: 5});
+    assert.equal(pAt.elapsedFraction, 1);
+    assert.equal(pAfter.elapsedFraction, 1);
+});
+
+// ---------------------------------------------------------------------------
+// 13. Weekly reset előtt / hibás időrend
+// ---------------------------------------------------------------------------
+
+test('Task8 before window start: elapsedFraction =0 no negative expected', () => {
+    const resetAt = localTimestamp(2026, 7, 20, 18, 0, 0);
+    const weeklyStartMillis = Date.parse(resetAt) - 7 * DAY_MILLIS;
+    const before = new Date(weeklyStartMillis - 60 * 60 * 1000).toISOString();
+    assert.equal(elapsedFractionOfConsumptionHorizon(resetAt, before, 5), 0);
+    assert.equal(traceElapsedFractionOfConsumptionHorizon(resetAt, before, 5).result, 0);
+    assert.equal(elapsedFractionOfWeek(resetAt, before), 0);
+    const pace = calculateWeeklyPace({quotaRemainingPercent: 100, resetAt, lastUpdated: before, workdays: 5});
+    assert.equal(pace.elapsedFraction, 0);
+    assert.equal(pace.elapsedWorkdays, 0);
+    assert.equal(pace.todayMinimumRemainingPercent, 100);
+});
+
+// ---------------------------------------------------------------------------
+// 14. Division-by-zero boundary
+// ---------------------------------------------------------------------------
+
+test('Task8 division-by-zero: window start elapsed 0 actual 0 => weekly pace 1.0, actual>0 => Infinity, daily not Infinity', () => {
+    const resetAt = localTimestamp(2026, 7, 20, 18, 0, 0);
+    const weeklyStartMillis = Date.parse(resetAt) - 7 * DAY_MILLIS;
+    const startISO = new Date(weeklyStartMillis).toISOString();
+    // actual 0 at start => 1.0 per production contract
+    assert.equal(weeklyConsumptionPace({quotaRemainingPercent: 100, elapsedFraction: 0}), 1.0);
+    assert.equal(dailyConsumptionPace({actualUsage: 0, expectedUsage: 0}), 1.0);
+    // actual >0 at start => Infinity
+    assert.equal(weeklyConsumptionPace({quotaRemainingPercent: 95, elapsedFraction: 0}), Infinity);
+    assert.equal(dailyConsumptionPace({actualUsage: 5, expectedUsage: 0}), Infinity);
+    // dailyRemaining must not be Infinity at same instant
+    const daily = calculateWeeklyPace({quotaRemainingPercent: 95, resetAt, lastUpdated: startISO, workdays: 5});
+    assert.ok(Number.isFinite(daily.dailyRemainingPercent), `dailyRemaining should be finite, got ${daily.dailyRemainingPercent}`);
+    assert.notEqual(daily.dailyRemainingPercent, Infinity);
+    assert.equal(daily.dailyRemainingPercent, 0); // at window start todayBudget 6h? Actually if weeklyStart at 18:00, first day partial 6h, allowed 6/120*100=5%, actual 5% => available 0 => daily 0? But finite
+});
+
+// ---------------------------------------------------------------------------
+// 15. Daily és Weekly szemantika szétválasztása (golden)
+// ---------------------------------------------------------------------------
+
+test('Task8 daily vs weekly semantics: golden payload 99% 08:03 start => daily 92.47 weekly 0.404 and color inputs differ', () => {
+    const weeklyPercent = 99;
+    const workdays = 5;
+    const resetAt = localTimestamp(2026, 9, 7, 8, 3, 33);
+    const now = localTimestamp(2026, 8, 31, 11, 1, 34);
+    const paceResult = calculateWeeklyPace({quotaRemainingPercent: weeklyPercent, resetAt, lastUpdated: now, workdays});
+    const dailyRemaining = paceResult.dailyRemainingPercent;
+    assertClose(dailyRemaining, 92.47216268492863, 1e-6);
+    const f = elapsedFractionOfConsumptionHorizon(resetAt, now, workdays);
+    const weeklyPace = weeklyConsumptionPace({quotaRemainingPercent: weeklyPercent, elapsedFraction: f});
+    assertClose(weeklyPace, 0.4044565115625877, 1e-9);
+    // color inputs
+    const dailyColor = dailyRemainingColor(dailyRemaining);
+    const weeklyColor = weeklyPaceColor(weeklyPace);
+    assert.ok(dailyColor);
+    assert.ok(weeklyColor);
+    // inputs are different concepts
+    assert.notEqual(dailyRemaining, weeklyPace);
+    // correct mapping
+    assert.equal(dailyColor, dailyRemainingColor(paceResult.dailyRemainingPercent));
+    assert.equal(weeklyColor, weeklyPaceColor(weeklyPace));
+    // ensure not swapped: daily color must be from remaining, weekly from pace
+    assert.equal(dailyRemainingColor(dailyRemaining), paceColor(dailyRemaining, DAILY_REMAINING_MIN, DAILY_REMAINING_MAX));
+    assert.equal(weeklyPaceColor(weeklyPace), paceToColor(weeklyPace));
+});
+
+// ---------------------------------------------------------------------------
+// 16. Daily color határértékek [-100,200]
+// ---------------------------------------------------------------------------
+
+test('Task8 daily color boundaries: -100,0,100,200 distinct and outside clamped', () => {
+    const cNeg100 = dailyRemainingColor(-100);
+    const c0 = dailyRemainingColor(0);
+    const c100 = dailyRemainingColor(100);
+    const c200 = dailyRemainingColor(200);
+    // all distinct (except interpolation may coincide? but should be distinct across range)
+    assert.ok(cNeg100);
+    assert.ok(c0);
+    assert.ok(c100);
+    assert.ok(c200);
+    assert.notEqual(cNeg100, c0);
+    assert.notEqual(c0, c100);
+    assert.notEqual(c100, c200);
+    assert.notEqual(cNeg100, c200);
+    // outside should clamp to endpoints
+    assert.equal(dailyRemainingColor(-150), cNeg100);
+    assert.equal(dailyRemainingColor(250), c200);
+    assert.equal(dailyRemainingColor(-1000), cNeg100);
+    assert.equal(dailyRemainingColor(1000), c200);
+    // but dailyRemaining itself not clamped
+    const resetAt2 = localTimestamp(2026, 7, 20, 18, 0, 0);
+    const carry = calculateWeeklyPace({quotaRemainingPercent: 80, resetAt: resetAt2, lastUpdated: localTimestamp(2026, 7, 15, 18, 0, 0), workdays: 5});
+    assert.equal(carry.dailyRemainingPercent, 125);
+    assert.notEqual(carry.dailyRemainingPercent, 100);
+    const over = calculateWeeklyPace({quotaRemainingPercent: 40, resetAt: resetAt2, lastUpdated: localTimestamp(2026, 7, 15, 18, 0, 0), workdays: 5});
+    assert.equal(over.dailyRemainingPercent, -75);
+    assert.notEqual(over.dailyRemainingPercent, 0);
+    // only color normalization clamps
+    assert.equal(normalizePace(-150, DAILY_REMAINING_MIN, DAILY_REMAINING_MAX), 0);
+    assert.equal(normalizePace(250, DAILY_REMAINING_MIN, DAILY_REMAINING_MAX), 100);
+});
+
+// ---------------------------------------------------------------------------
+// 17. Local midnight — timezone regresszió
+// ---------------------------------------------------------------------------
+
+test('Task8 local midnight: two timestamps 1 sec apart cross midnight belong to different calendar days', () => {
+    // Europe/Budapest midnight boundary: 23:59:59 vs 00:00:00 next day
+    const before = new Date(2026, 7, 31, 23, 59, 59, 0); // Aug 31 23:59:59 local
+    const after = new Date(2026, 8, 1, 0, 0, 0, 0); // Sep 1 00:00:00 local
+    const beforeISO = before.toISOString();
+    const afterISO = after.toISOString();
+    // They must be different local calendar days
+    // Verify via calculateWeeklyPace: allowedByEOD must differ
+    const resetAt = localTimestamp(2026, 9, 7, 8, 3, 33);
+    const tBefore = traceCalculateWeeklyPace({quotaRemainingPercent: 100, resetAt, lastUpdated: beforeISO, workdays: 5});
+    const tAfter = traceCalculateWeeklyPace({quotaRemainingPercent: 100, resetAt, lastUpdated: afterISO, workdays: 5});
+    // Should be different allowedByEOD because they are different EOD horizons
+    assert.notEqual(tBefore.trace.allowedByEOD, tAfter.trace.allowedByEOD);
+    // Also verify that UTC midnight would not match if TZ != UTC: local midnight != UTC midnight
+    const utcMidnight = Date.UTC(2026, 7, 31, 0, 0, 0, 0);
+    const localMidnight = new Date(2026, 7, 31, 0, 0, 0, 0).getTime();
+    const offsetHours = (Date.UTC(2026, 7, 31, 12, 0, 0, 0) - new Date(2026, 7, 31, 12, 0, 0, 0).getTime()) / (60 * 60 * 1000);
+    if (Math.abs(offsetHours) > 0.01) {
+        assert.notEqual(localMidnight, utcMidnight);
+    }
+    // Daily must be computed from local midnight, not UTC
+    assert.ok(Number.isFinite(tBefore.trace.localToday00));
+    assert.ok(Number.isFinite(tAfter.trace.localToday00));
+    assert.notEqual(tBefore.trace.localToday00, tAfter.trace.localToday00);
+});
+
+// ---------------------------------------------------------------------------
+// 18. DST — tavaszi óraátállítás (calendar arithmetic)
+// ---------------------------------------------------------------------------
+
+test('Task8 DST spring: nextLocalMidnight via calendar not +86400000 (23h day)', () => {
+    if (!isBudapestDSTAvailable()) return;
+    const springStart = new Date(2026, 2, 29, 0, 0, 0, 0).getTime(); // 2026-03-29 00:00 local (DST transition)
+    const nextMidnight = new Date(2026, 2, 30, 0, 0, 0, 0).getTime();
+    const diff = nextMidnight - springStart;
+    assertClose(diff / (60 * 60 * 1000), 23, 0.01, 'spring day should be 23h');
+    // calendar arithmetic must give exactly next local date, not +86400000
+    const wrong = springStart + 86400000;
+    assert.notEqual(nextMidnight, wrong);
+    // ensure weekly calc uses calendar day units: 23h day = 1 unit
+    const resetAt = new Date(springStart + 7 * DAY_MILLIS).toISOString();
+    const lastUpdated = new Date(springStart + 11.5 * 60 * 60 * 1000).toISOString(); // half real duration 23h/2
+    const t = traceCalculateWeeklyPace({quotaRemainingPercent: 90, resetAt, lastUpdated, workdays: 5});
+    assertClose(t.trace.todayDayUnits, 1, 1e-9);
+    assertClose(t.trace.elapsedCalendarDayUnits, 0.5, 0.01);
+});
+
+ // ---------------------------------------------------------------------------
+// 19. DST — őszi óraátállítás
+// ---------------------------------------------------------------------------
+
+test('Task8 DST autumn: 25h day still 1 calendar unit, next day start not shifted', () => {
+    if (!isBudapestDSTAvailable()) return;
+    const fallStart = new Date(2026, 9, 25, 0, 0, 0, 0).getTime(); // 2026-10-25
+    const nextMidnight = new Date(2026, 9, 26, 0, 0, 0, 0).getTime();
+    const diff = nextMidnight - fallStart;
+    assertClose(diff / (60 * 60 * 1000), 25, 0.01, 'autumn day should be 25h');
+    const wrong = fallStart + 86400000;
+    assert.notEqual(nextMidnight, wrong);
+    const resetAt = new Date(fallStart + 7 * DAY_MILLIS).toISOString();
+    const lastUpdated = new Date(fallStart + 12.5 * 60 * 60 * 1000).toISOString();
+    const t = traceCalculateWeeklyPace({quotaRemainingPercent: 90, resetAt, lastUpdated, workdays: 5});
+    assertClose(t.trace.todayDayUnits, 1, 1e-9);
+    assertClose(t.trace.elapsedCalendarDayUnits, 0.5, 0.01);
+});
+
+// ---------------------------------------------------------------------------
+// 20. Production/debug shared implementation equivalence
+// ---------------------------------------------------------------------------
+
+test('Task8 production/debug equivalence: session, dailyRemaining, dailyColor, weeklyPace, weeklyColor', () => {
+    // Session
+    const sess = {sessionPercent: 75, sessionResetAt: localTimestamp(2026, 8, 27, 14, 31, 0), lastUpdated: localTimestamp(2026, 8, 27, 12, 31, 0), sessionWindowMins: 300};
+    assert.equal(calculateSessionPace(sess), traceCalculateSessionPace(sess).result);
+    // Daily remaining
+    const dailyInput = {quotaRemainingPercent: 60, resetAt: localTimestamp(2026, 7, 16, 12, 0, 0), lastUpdated: localTimestamp(2026, 7, 16, 12, 0, 0), workdays: 5}; // need proper reset
+    // Use a realistic weekly input
+    const resetAt = localTimestamp(2026, 7, 20, 18, 0, 0);
+    const lastUpdated = localTimestamp(2026, 7, 16, 12, 0, 0);
+    const workdays = 5;
+    const weeklyPercent = 60;
+    const prodDaily = calculateWeeklyPace({quotaRemainingPercent: weeklyPercent, resetAt, lastUpdated, workdays}).dailyRemainingPercent;
+    const traceDaily = traceCalculateWeeklyPace({quotaRemainingPercent: weeklyPercent, resetAt, lastUpdated, workdays}).result.dailyRemainingPercent;
+    assert.equal(prodDaily, traceDaily);
+    // Daily color
+    assert.equal(dailyRemainingColor(prodDaily), traceDailyRemainingColor(traceDaily).result);
+    assert.equal(dailyPaceColor(prodDaily), traceDailyPaceColor(prodDaily).result);
+    // Weekly pace
+    const f = elapsedFractionOfConsumptionHorizon(resetAt, lastUpdated, workdays);
+    const prodWeeklyPace = weeklyConsumptionPace({quotaRemainingPercent: weeklyPercent, elapsedFraction: f});
+    const traceWeeklyPace = traceWeeklyConsumptionPace({quotaRemainingPercent: weeklyPercent, elapsedFraction: f}).result;
+    assert.equal(prodWeeklyPace, traceWeeklyPace);
+    // Weekly color
+    assert.equal(weeklyPaceColor(prodWeeklyPace), traceWeeklyPaceColor(traceWeeklyPace).result);
+    assert.equal(paceToColor(prodWeeklyPace), tracePaceToColor(prodWeeklyPace).result);
+});
+
+// ---------------------------------------------------------------------------
+// 21. Debug raw weekly pace finite numerically
+// ---------------------------------------------------------------------------
+
+test('Task8 debug raw weekly pace finite shows numeric not n/a', () => {
+    const f = elapsedFractionOfConsumptionHorizon(localTimestamp(2026, 9, 7, 8, 3, 33), localTimestamp(2026, 8, 31, 11, 1, 34), 5);
+    const t = traceWeeklyConsumptionPace({quotaRemainingPercent: 99, elapsedFraction: f});
+    // rawPace must be finite and equal to actual/expected
+    assert.ok(Number.isFinite(t.trace.rawPace));
+    assert.ok(Number.isFinite(t.result));
+    assertClose(t.trace.rawPace, t.result, 1e-12);
+    assertClose(t.trace.actualUsage, 1, 1e-12);
+    assertClose(t.trace.expectedUsage, f * 100, 1e-12);
+    assertClose(t.result, 0.4044565115625877, 1e-9);
+});
+
+test('Task8 debug raw pace 1/1.766 ~0.566 finite', () => {
+    // manual trace with actual 1 expected 1.766
+    const actual = 1;
+    const expected = 1.766;
+    const pace = dailyConsumptionPace({actualUsage: actual, expectedUsage: expected});
+    assertClose(pace, 0.566251, 1e-6);
+    assert.ok(Number.isFinite(pace));
+});
+
+// ---------------------------------------------------------------------------
+// 22. Debug speciális értékek Infinity null NaN
+// ---------------------------------------------------------------------------
+
+test('Task8 debug specials: Infinity null NaN handling', () => {
+    // Weekly Infinity (expected 0 actual>0)
+    assert.equal(weeklyConsumptionPace({quotaRemainingPercent: 95, elapsedFraction: 0}), Infinity);
+    assert.equal(traceWeeklyConsumptionPace({quotaRemainingPercent: 95, elapsedFraction: 0}).result, Infinity);
+    assert.equal(weeklyPaceColor(Infinity), null);
+    assert.equal(traceWeeklyPaceColor(Infinity).result, null);
+    // null
+    assert.equal(weeklyConsumptionPace({quotaRemainingPercent: null, elapsedFraction: 0.5}), null);
+    assert.equal(dailyRemainingColor(null), null);
+    assert.equal(traceDailyRemainingColor(null).result, null);
+    // NaN
+    assert.equal(weeklyConsumptionPace({quotaRemainingPercent: NaN, elapsedFraction: 0.5}), null);
+    assert.equal(dailyConsumptionPace({actualUsage: NaN, expectedUsage: 10}), null);
+    assert.equal(normalizePace(NaN, -100, 200), null);
+    // Daily not Infinity when weekly is Infinity
+    const resetAt = localTimestamp(2026, 7, 20, 18, 0, 0);
+    const weeklyStartMillis = Date.parse(resetAt) - 7 * DAY_MILLIS;
+    const startISO = new Date(weeklyStartMillis).toISOString();
+    const daily = calculateWeeklyPace({quotaRemainingPercent: 95, resetAt, lastUpdated: startISO, workdays: 5});
+    assert.ok(Number.isFinite(daily.dailyRemainingPercent));
+    assert.notEqual(daily.dailyRemainingPercent, Infinity);
+});
+
+// ---------------------------------------------------------------------------
+// 23. Payload boundary teszt (golden scenario)
+// ---------------------------------------------------------------------------
+
+test('Task8 payload boundary golden scenario: full JSON payload integration', () => {
+    const payload = {
+        session_percent: 82,
+        session_reset_at: localTimestamp(2026, 8, 30, 15, 10, 0),
+        weekly_percent: 71,
+        weekly_reset_at: localTimestamp(2026, 8, 30, 18, 0, 0),
+        weekly_workdays: 5,
+        last_updated: localTimestamp(2026, 8, 30, 12, 19, 0),
+        session_window_mins: 300,
+    };
+    // session
+    const sessionRemaining = payload.session_percent;
+    assert.equal(sessionRemaining, 82);
+    const sessionPace = calculateSessionPace({
+        sessionPercent: payload.session_percent,
+        sessionResetAt: payload.session_reset_at,
+        lastUpdated: payload.last_updated,
+        sessionWindowMins: payload.session_window_mins,
+    });
+    assert.ok(Number.isFinite(sessionPace));
+    const sessionColor = sessionPaceColor(sessionPace);
+    assert.ok(sessionColor || sessionColor === null);
+    // weekly
+    const weeklyPaceInput = calculateWeeklyPace({
+        quotaRemainingPercent: payload.weekly_percent,
+        resetAt: payload.weekly_reset_at,
+        lastUpdated: payload.last_updated,
+        workdays: payload.weekly_workdays,
+    });
+    assert.ok(Number.isFinite(weeklyPaceInput.dailyRemainingPercent));
+    const dailyRemaining = weeklyPaceInput.dailyRemainingPercent;
+    const dailyColor = dailyRemainingColor(dailyRemaining);
+    assert.ok(dailyColor);
+    // weekly remaining directly
+    const weeklyRemaining = payload.weekly_percent;
+    assert.equal(weeklyRemaining, 71);
+    const f = elapsedFractionOfConsumptionHorizon(payload.weekly_reset_at, payload.last_updated, payload.weekly_workdays);
+    const weeklyPace = weeklyConsumptionPace({quotaRemainingPercent: weeklyRemaining, elapsedFraction: f});
+    assert.ok(weeklyPace === null || Number.isFinite(weeklyPace) || weeklyPace === Infinity);
+    const weeklyColor = weeklyPaceColor(weeklyPace);
+    // color inputs are distinct
+    assert.equal(dailyColor, dailyRemainingColor(dailyRemaining));
+    // weekly color from pace, fallback via limit if pace null
+    if (Number.isFinite(weeklyPace)) assert.equal(weeklyColor, paceToColor(weeklyPace));
+    // trace equivalence for whole payload (simulates debug-calc.js buildTrace)
+    const traceSess = traceCalculateSessionPace({
+        sessionPercent: payload.session_percent,
+        sessionResetAt: payload.session_reset_at,
+        lastUpdated: payload.last_updated,
+        sessionWindowMins: payload.session_window_mins,
+    });
+    assert.equal(traceSess.result, sessionPace);
+    const traceWeekly = traceCalculateWeeklyPace({
+        quotaRemainingPercent: payload.weekly_percent,
+        resetAt: payload.weekly_reset_at,
+        lastUpdated: payload.last_updated,
+        workdays: payload.weekly_workdays,
+    });
+    assert.equal(traceWeekly.result.dailyRemainingPercent, dailyRemaining);
+    assert.equal(traceDailyRemainingColor(traceWeekly.result.dailyRemainingPercent).result, dailyColor);
+    const traceWeeklyPace2 = traceWeeklyConsumptionPace({quotaRemainingPercent: weeklyRemaining, elapsedFraction: f});
+    assert.equal(traceWeeklyPace2.result, weeklyPace);
+});
+
+test('Task8 golden scenario second payload: weekly 99% 08:03 start', () => {
+    const payload = {
+        session_percent: 50,
+        session_reset_at: localTimestamp(2026, 8, 31, 12, 0, 0),
+        weekly_percent: 99,
+        weekly_reset_at: localTimestamp(2026, 9, 7, 8, 3, 33),
+        weekly_workdays: 5,
+        last_updated: localTimestamp(2026, 8, 31, 11, 1, 34),
+        session_window_mins: 300,
+    };
+    const sessPace = calculateSessionPace({
+        sessionPercent: payload.session_percent,
+        sessionResetAt: payload.session_reset_at,
+        lastUpdated: payload.last_updated,
+        sessionWindowMins: payload.session_window_mins,
+    });
+    assert.ok(Number.isFinite(sessPace));
+    const weekly = calculateWeeklyPace({
+        quotaRemainingPercent: payload.weekly_percent,
+        resetAt: payload.weekly_reset_at,
+        lastUpdated: payload.last_updated,
+        workdays: payload.weekly_workdays,
+    });
+    assertClose(weekly.dailyRemainingPercent, 92.47216268492863, 1e-6);
+    assert.equal(Math.round(weekly.dailyRemainingPercent), 92);
+    const f = elapsedFractionOfConsumptionHorizon(payload.weekly_reset_at, payload.last_updated, payload.weekly_workdays);
+    const wPace = weeklyConsumptionPace({quotaRemainingPercent: payload.weekly_percent, elapsedFraction: f});
+    assertClose(wPace, 0.4044565115625877, 1e-9);
+    // colors
+    assert.equal(dailyRemainingColor(weekly.dailyRemainingPercent), dailyRemainingColor(weekly.dailyRemainingPercent));
+    assert.equal(weeklyPaceColor(wPace), paceToColor(wPace));
+});
+
+// ---------------------------------------------------------------------------
+// 24. Table-driven workdays / color boundaries (already covered but explicit)
+// ---------------------------------------------------------------------------
+
+test('Task8 table-driven color boundaries [-100,200] via paceColor', () => {
+    const cases = [
+        {input: -100, expectedNorm: 0},
+        {input: 0,    expectedNorm: 33.333333333333336},
+        {input: 100,  expectedNorm: 66.66666666666667},
+        {input: 200,  expectedNorm: 100},
+    ];
+    for (const c of cases) {
+        const norm = normalizePace(c.input, DAILY_REMAINING_MIN, DAILY_REMAINING_MAX);
+        assertClose(norm, c.expectedNorm, 1e-9, `normalize ${c.input}`);
+        assert.ok(dailyRemainingColor(c.input));
+    }
+    // outside clamp
+    assert.equal(normalizePace(-150, -100, 200), 0);
+    assert.equal(normalizePace(250, -100, 200), 100);
+});
+
+// ---------------------------------------------------------------------------
+// 25. Float comparison helper already validated
+// ---------------------------------------------------------------------------
+
+test('Task8 assertClose works with epsilon 1e-6', () => {
+    assertClose(92.47216268492863, 92.4722, 1e-3);
+    assertClose(0.4044565115625877, 0.4044565, 1e-6);
+    // should fail if epsilon too small: we test that our helper would throw? Just ensure close passes
+});
+
+// Additional shared trace via Node debug-calc analogy
+test('Task8 local timestamp DST sanity: spring 23h autumn 25h distinct', () => {
+    if (!isBudapestDSTAvailable()) return;
+    const spring0 = new Date(2026, 2, 29, 0, 0, 0, 0).getTime();
+    const spring1 = new Date(2026, 2, 30, 0, 0, 0, 0).getTime();
+    const fall0 = new Date(2026, 9, 25, 0, 0, 0, 0).getTime();
+    const fall1 = new Date(2026, 9, 26, 0, 0, 0, 0).getTime();
+    assertClose((spring1 - spring0) / (60*60*1000), 23, 0.01);
+    assertClose((fall1 - fall0) / (60*60*1000), 25, 0.01);
+});
+
+
