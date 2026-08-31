@@ -45,6 +45,7 @@ def main(argv: list[str] | None = None) -> int:
     subparsers.add_parser("logout")
     subparsers.add_parser("auth-status")
     subparsers.add_parser("open-logs")
+    subparsers.add_parser("debug")
 
     args = parser.parse_args(argv)
 
@@ -93,6 +94,10 @@ def main(argv: list[str] | None = None) -> int:
 
         subprocess.Popen(["xdg-open", str(LOG_FILE)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return 0
+    if args.command == "debug":
+        from .debug import run_debug
+
+        return run_debug()
 
     return 2
 

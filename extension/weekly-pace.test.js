@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {calculateWeeklyPace, calculateSessionPace, compactPanelComponents, dailyLimitIndicatorLevel, limitIndicatorColor, resolveDailyRemainingPercent, resolveLimitIndicatorPercents, normalizePace, paceColor, dailyPaceColor, sessionPaceColor, dailyConsumptionPace, paceToColor, weeklyConsumptionPace, weeklyPaceColor, elapsedFractionOfWeek} from './weekly-pace.js';
+import {calculateWeeklyPace, calculateSessionPace, compactPanelComponents, dailyLimitIndicatorLevel, limitIndicatorColor, resolveDailyRemainingPercent, resolveLimitIndicatorPercents, normalizePace, paceColor, dailyPaceColor, sessionPaceColor, dailyConsumptionPace, paceToColor, weeklyConsumptionPace, weeklyPaceColor, elapsedFractionOfWeek, traceCalculateSessionPace, traceCalculateWeeklyPace, traceDailyConsumptionPace, traceElapsedFractionOfWeek, traceWeeklyConsumptionPace, tracePaceToColor, tracePaceColor, traceLimitIndicatorColor, traceDailyLimitIndicatorLevel, traceNormalizePace, traceDailyPaceColor, traceSessionPaceColor, traceWeeklyPaceColor} from './weekly-pace.js';
 
 // ---------------------------------------------------------------------------
 // Canonical model constants
@@ -1160,4 +1160,354 @@ test('Europe/Budapest autumn DST: 25h between consecutive local midnights', () =
     const diffHours = (after - before) / (60 * 60 * 1000);
     assert.ok(Math.abs(diffHours - 25) < 0.01,
         `autumn DST gap should be 25h, got ${diffHours}h`);
+});
+
+// ---------------------------------------------------------------------------
+// Trace equivalence: production result == trace result for same inputs
+// ---------------------------------------------------------------------------
+
+test('traceDailyLimitIndicatorLevel returns same result as dailyLimitIndicatorLevel', () => {
+    const cases = [125, 100, 95, 0, -2, NaN, null, undefined, Infinity];
+    for (const v of cases) {
+        assert.equal(traceDailyLimitIndicatorLevel(v).result, dailyLimitIndicatorLevel(v), `dailyLimitIndicatorLevel(${v})`);
+    }
+});
+
+test('traceLimitIndicatorColor returns same result as limitIndicatorColor', () => {
+    for (const v of [0, 25, 50, 75, 100, 60, 30, 125, -5, NaN, null]) {
+        assert.equal(traceLimitIndicatorColor(v).result, limitIndicatorColor(v), `limitIndicatorColor(${v})`);
+    }
+});
+
+test('traceNormalizePace returns same result as normalizePace', () => {
+    assert.equal(traceNormalizePace(50, -100, 200).result, normalizePace(50, -100, 200));
+    assert.equal(traceNormalizePace(-100, -100, 200).result, normalizePace(-100, -100, 200));
+    assert.equal(traceNormalizePace(300, -100, 200).result, normalizePace(300, -100, 200));
+    assert.equal(traceNormalizePace(NaN, -100, 200).result, normalizePace(NaN, -100, 200));
+    assert.equal(traceNormalizePace(null, -100, 200).result, normalizePace(null, -100, 200));
+});
+
+test('tracePaceColor returns same result as paceColor', () => {
+    for (const p of [-100, 0, 50, 100, 200, NaN, null]) {
+        assert.equal(tracePaceColor(p, -100, 200).result, paceColor(p, -100, 200), `paceColor(${p})`);
+    }
+});
+
+test('traceDailyPaceColor / traceSessionPaceColor return same as dailyPaceColor / sessionPaceColor', () => {
+    assert.equal(traceDailyPaceColor(0).result, dailyPaceColor(0));
+    assert.equal(traceDailyPaceColor(-100).result, dailyPaceColor(-100));
+    assert.equal(traceSessionPaceColor(50).result, sessionPaceColor(50));
+    assert.equal(traceSessionPaceColor(null).result, sessionPaceColor(null));
+});
+
+test('tracePaceToColor returns same result as paceToColor', () => {
+    for (const p of [0.5, 0.8, 0.81, 1.05, 1.5, NaN, null, Infinity]) {
+        assert.equal(tracePaceToColor(p).result, paceToColor(p), `paceToColor(${p})`);
+    }
+});
+
+test('traceWeeklyPaceColor returns same as weeklyPaceColor', () => {
+    assert.equal(traceWeeklyPaceColor(0.5).result, weeklyPaceColor(0.5));
+    assert.equal(traceWeeklyPaceColor(null).result, weeklyPaceColor(null));
+});
+
+test('traceDailyConsumptionPace returns same result as dailyConsumptionPace', () => {
+    const cases = [
+        {actualUsage: 10, expectedUsage: 10},
+        {actualUsage: 5, expectedUsage: 10},
+        {actualUsage: 0, expectedUsage: 0},
+        {actualUsage: 5, expectedUsage: 0},
+        {actualUsage: NaN, expectedUsage: 10},
+        {actualUsage: 10, expectedUsage: NaN},
+    ];
+    for (const c of cases) {
+        assert.equal(traceDailyConsumptionPace(c).result, dailyConsumptionPace(c), `dailyConsumptionPace ${JSON.stringify(c)}`);
+    }
+});
+
+test('traceElapsedFractionOfWeek returns same result as elapsedFractionOfWeek', () => {
+    assert.equal(traceElapsedFractionOfWeek('2026-07-20T18:00:00+02:00', '2026-07-14T18:00:00+02:00').result, elapsedFractionOfWeek('2026-07-20T18:00:00+02:00', '2026-07-14T18:00:00+02:00'));
+    assert.equal(traceElapsedFractionOfWeek('', '2026-07-14T18:00:00+02:00').result, elapsedFractionOfWeek('', '2026-07-14T18:00:00+02:00'));
+    assert.equal(traceElapsedFractionOfWeek('2026-07-20T18:00:00+02:00', '').result, elapsedFractionOfWeek('2026-07-20T18:00:00+02:00', ''));
+});
+
+test('traceWeeklyConsumptionPace returns same result as weeklyConsumptionPace', () => {
+    for (const c of [
+        {quotaRemainingPercent: 60, elapsedFraction: 0.4},
+        {quotaRemainingPercent: 80, elapsedFraction: 0.4},
+        {quotaRemainingPercent: 100, elapsedFraction: 0},
+        {quotaRemainingPercent: 95, elapsedFraction: 0},
+        {quotaRemainingPercent: NaN, elapsedFraction: 0.5},
+    ]) {
+        assert.equal(traceWeeklyConsumptionPace(c).result, weeklyConsumptionPace(c), `weeklyConsumptionPace ${JSON.stringify(c)}`);
+    }
+});
+
+test('traceCalculateSessionPace returns same result as calculateSessionPace', () => {
+    const cases = [
+        {sessionPercent: 82, sessionResetAt: '2026-08-27T14:31:00+02:00', lastUpdated: '2026-08-27T11:29:00+02:00', sessionWindowMins: 300},
+        {sessionPercent: 30, sessionResetAt: '2026-08-27T14:31:00+02:00', lastUpdated: '2026-08-27T12:31:00+02:00', sessionWindowMins: 300},
+        {},
+        {sessionPercent: 80},
+        {sessionWindowMins: 300},
+        {sessionPercent: 50, sessionResetAt: 'invalid', lastUpdated: '2026-08-27T11:29:00+02:00', sessionWindowMins: 300},
+    ];
+    for (const c of cases) {
+        assert.equal(traceCalculateSessionPace(c).result, calculateSessionPace(c), `calculateSessionPace ${JSON.stringify(c)}`);
+    }
+});
+
+test('traceCalculateWeeklyPace returns same result as calculateWeeklyPace', () => {
+    const cases = [
+        {quotaRemainingPercent: 100, resetAt: '2026-07-20T18:00:00+02:00', lastUpdated: '2026-07-13T18:00:00+02:00', workdays: 5},
+        {quotaRemainingPercent: 80, resetAt: '2026-07-20T18:00:00+02:00', lastUpdated: '2026-07-14T18:00:00+02:00', workdays: 5},
+        {quotaRemainingPercent: 60, resetAt: '2026-07-20T18:00:00+02:00', lastUpdated: '2026-07-15T18:00:00+02:00', workdays: 5},
+        {},
+        {quotaRemainingPercent: 80},
+        {quotaRemainingPercent: 50, resetAt: '', lastUpdated: '', workdays: 5},
+    ];
+    for (const c of cases) {
+        assert.deepEqual(traceCalculateWeeklyPace(c).result, calculateWeeklyPace(c), `calculateWeeklyPace ${JSON.stringify(c)}`);
+    }
+});
+
+// ---------------------------------------------------------------------------
+// Trace intermediate values
+// ---------------------------------------------------------------------------
+
+test('traceCalculateSessionPace exposes intermediate values for normal session', () => {
+    const t = traceCalculateSessionPace({
+        sessionPercent: 82,
+        sessionResetAt: '2026-08-27T14:31:00+02:00',
+        lastUpdated: '2026-08-27T11:29:00+02:00',
+        sessionWindowMins: 300,
+    });
+    // sessionStart = 14:31 - 5h = 09:31, elapsed 11:29-09:31 = 118 min, 118/300*100 = 39.333...
+    assert.ok(Math.abs(t.result - 42.66666666666667) < 1e-10);
+    const tr = t.trace;
+    assert.equal(tr.sessionTotalMillis, 300 * 60 * 1000);
+    assert.ok(Math.abs(tr.timeElapsedPercentClamped - 39.33333333333333) < 1e-10);
+    assert.ok(Math.abs(tr.rawPace - 42.66666666666667) < 1e-10);
+    assert.ok(Math.abs(tr.clampedPace - 42.66666666666667) < 1e-10);
+    assert.ok(Number.isFinite(tr.resetAtMillis));
+    assert.ok(Number.isFinite(tr.lastUpdatedMillis));
+    assert.ok(Number.isFinite(tr.sessionStartMillis));
+    assert.ok(Number.isFinite(tr.elapsedMillis));
+});
+
+test('traceCalculateSessionPace clamps correctly for over-consumption', () => {
+    const t = traceCalculateSessionPace({
+        sessionPercent: 30,
+        sessionResetAt: '2026-08-27T14:31:00+02:00',
+        lastUpdated: '2026-08-27T12:31:00+02:00',
+        sessionWindowMins: 300,
+    });
+    // elapsed 60% (180/300), remaining 30 => pace = -30
+    assert.equal(t.result, -30);
+    assert.equal(t.trace.timeElapsedPercentClamped, 60);
+    assert.equal(t.trace.rawPace, -30);
+});
+
+test('traceCalculateSessionPace returns null for missing data with trace', () => {
+    const t = traceCalculateSessionPace({});
+    assert.equal(t.result, null);
+    assert.equal(t.trace.isSessionPercentFinite, false);
+});
+
+test('traceCalculateSessionPace handles invalid timestamps', () => {
+    const t = traceCalculateSessionPace({
+        sessionPercent: 80,
+        sessionResetAt: 'not-a-date',
+        lastUpdated: '2026-08-27T11:29:00+02:00',
+        sessionWindowMins: 300,
+    });
+    assert.equal(t.result, null);
+    assert.equal(t.trace.isResetFinite, false);
+});
+
+test('traceCalculateWeeklyPace exposes EOD-normalized daily remaining details', () => {
+    const t = traceCalculateWeeklyPace({
+        quotaRemainingPercent: 60,
+        resetAt: '2026-07-20T18:00:00+02:00',
+        lastUpdated: '2026-07-15T18:00:00+02:00',
+        workdays: 5,
+    });
+    const tr = t.trace;
+    assert.equal(tr.boundedQuotaRemainingPercent, 60);
+    assert.equal(tr.fullDayBudget, 20);
+    assert.ok(Number.isFinite(tr.weeklyStartMillis));
+    assert.ok(Number.isFinite(tr.consumptionHorizonMillis));
+    assert.ok(Number.isFinite(tr.localToday00));
+    assert.ok(Number.isFinite(tr.localNextDay00));
+    assert.ok(Number.isFinite(tr.allowedByEOD));
+    assert.ok(Number.isFinite(tr.dailyRemainingPercent));
+    // 2 days into 5-day window: allowedByEOD=45%, actualUsage=40%, available=5%, divisor=20 => 25%
+    assert.ok(Math.abs(t.result.dailyRemainingPercent - 25) < 1e-10);
+});
+
+test('traceCalculateWeeklyPace exposes >100% daily remaining for under-consumption', () => {
+    const t = traceCalculateWeeklyPace({
+        quotaRemainingPercent: 80,
+        resetAt: '2026-07-20T18:00:00+02:00',
+        lastUpdated: '2026-07-15T18:00:00+02:00',
+        workdays: 5,
+    });
+    // allowedByEOD=45%, actualUsage=20%, available=25%, divisor=20 => 125%
+    assert.ok(Math.abs(t.result.dailyRemainingPercent - 125) < 1e-10);
+    assert.equal(t.trace.available, 25);
+});
+
+test('traceCalculateWeeklyPace exposes <0% daily remaining for over-consumption', () => {
+    const t = traceCalculateWeeklyPace({
+        quotaRemainingPercent: 40,
+        resetAt: '2026-07-20T18:00:00+02:00',
+        lastUpdated: '2026-07-15T18:00:00+02:00',
+        workdays: 5,
+    });
+    assert.ok(Math.abs(t.result.dailyRemainingPercent - (-75)) < 1e-10);
+});
+
+test('traceCalculateWeeklyPace handles midnight correctly', () => {
+    const t = traceCalculateWeeklyPace({
+        quotaRemainingPercent: 95,
+        resetAt: '2026-07-20T18:00:00+02:00',
+        lastUpdated: '2026-07-14T00:00:00+02:00',
+        workdays: 5,
+    });
+    assert.ok(Number.isFinite(t.trace.localToday00));
+    assert.ok(Number.isFinite(t.trace.localNextDay00));
+    assert.ok(t.trace.todayDuration >= 0);
+});
+
+test('traceDailyConsumptionPace exposes Infinity case', () => {
+    const t = traceDailyConsumptionPace({actualUsage: 5, expectedUsage: 0});
+    assert.equal(t.result, Infinity);
+    assert.equal(t.trace.isInfiniteCase, true);
+});
+
+test('traceDailyConsumptionPace exposes 1.0 case for zero/zero', () => {
+    const t = traceDailyConsumptionPace({actualUsage: 0, expectedUsage: 0});
+    assert.equal(t.result, 1.0);
+    assert.equal(t.trace.isZeroZero, true);
+});
+
+test('traceWeeklyConsumptionPace delegates to dailyConsumptionPace trace', () => {
+    const t = traceWeeklyConsumptionPace({quotaRemainingPercent: 60, elapsedFraction: 0.4});
+    assert.ok(Math.abs(t.result - 1.0) < 1e-10);
+    assert.equal(t.trace.actualUsage, 40);
+    assert.equal(t.trace.expectedUsage, 40);
+    assert.ok(t.trace.dailyPaceTrace);
+});
+
+test('traceElapsedFractionOfWeek exposes windowStart and rawFraction', () => {
+    const t = traceElapsedFractionOfWeek('2026-07-20T18:00:00+02:00', '2026-07-14T18:00:00+02:00');
+    assert.ok(Math.abs(t.result - 1/7) < 1e-10);
+    assert.ok(Number.isFinite(t.trace.windowStartMillis));
+    assert.ok(Number.isFinite(t.trace.elapsedMillis));
+    assert.ok(Number.isFinite(t.trace.rawFraction));
+});
+
+test('tracePaceToColor exposes selected threshold', () => {
+    const t = tracePaceToColor(0.5);
+    assert.equal(t.result, '#15803D');
+    assert.equal(t.trace.selectedThreshold, 0.80);
+    assert.equal(t.trace.selectedColor, '#15803D');
+});
+
+test('tracePaceToColor returns null for Infinity with trace', () => {
+    const t = tracePaceToColor(Infinity);
+    assert.equal(t.result, null);
+    assert.equal(t.trace.isFinite, false);
+});
+
+test('tracePaceColor exposes normalized value and stops', () => {
+    const t = tracePaceColor(50, -100, 200);
+    assert.ok(t.result);
+    assert.equal(t.trace.normalized, 50);
+    assert.ok(t.trace.normalizeTrace);
+    assert.equal(t.trace.normalizeTrace.normalized, 50);
+});
+
+test('traceLimitIndicatorColor exposes interpolation details', () => {
+    const t = traceLimitIndicatorColor(60);
+    assert.ok(t.result);
+    assert.equal(t.trace.boundedPercent, 60);
+    assert.ok(Number.isFinite(t.trace.ratio));
+    assert.ok(Array.isArray(t.trace.interpolatedRgb));
+});
+
+test('traceNormalizePace exposes clamping', () => {
+    const t = traceNormalizePace(300, -100, 200);
+    assert.equal(t.result, 100);
+    assert.equal(t.trace.clamped, 200);
+    assert.equal(t.trace.normalized, 100);
+});
+
+test('traceNormalizePace returns null for invalid pace', () => {
+    const t = traceNormalizePace(null, -100, 200);
+    assert.equal(t.result, null);
+    assert.equal(t.trace.isFinite, false);
+});
+
+// ---------------------------------------------------------------------------
+// Production / debug equivalence via trace path
+// ---------------------------------------------------------------------------
+
+test('production/debug equivalence: session remaining, pace, color', () => {
+    const payload = {
+        sessionPercent: 82,
+        sessionResetAt: '2026-08-27T14:31:00+02:00',
+        lastUpdated: '2026-08-27T11:29:00+02:00',
+        sessionWindowMins: 300,
+    };
+    // Production path
+    const prodPace = calculateSessionPace(payload);
+    const prodColor = sessionPaceColor(prodPace);
+    const prodRemaining = payload.sessionPercent;
+    // Trace path
+    const trace = traceCalculateSessionPace(payload);
+    const traceColor = traceSessionPaceColor(trace.result);
+    assert.equal(trace.result, prodPace);
+    assert.equal(traceColor.result, prodColor);
+    assert.equal(trace.trace.sessionPercent, prodRemaining);
+});
+
+test('production/debug equivalence: daily remaining, pace, color', () => {
+    const resetAt = '2026-07-20T18:00:00+02:00';
+    const lastUpdated = '2026-07-16T12:00:00+02:00';
+    const workdays = 5;
+    const weeklyPercent = 60;
+    // Production path (as in _applyPayload)
+    const paceResult = calculateWeeklyPace({quotaRemainingPercent: weeklyPercent, resetAt, lastUpdated, workdays});
+    const prodDailyRemaining = paceResult.dailyRemainingPercent;
+    const prodDailyPace = paceResult.elapsedFraction != null
+        ? dailyConsumptionPace({actualUsage: 100 - weeklyPercent, expectedUsage: paceResult.elapsedFraction * 100})
+        : null;
+    const prodDailyColor = paceToColor(prodDailyPace);
+    // Trace path
+    const tracePaceResult = traceCalculateWeeklyPace({quotaRemainingPercent: weeklyPercent, resetAt, lastUpdated, workdays});
+    const traceDailyPace = tracePaceResult.result.elapsedFraction != null
+        ? traceDailyConsumptionPace({actualUsage: 100 - weeklyPercent, expectedUsage: tracePaceResult.result.elapsedFraction * 100})
+        : {result: null};
+    const traceDailyColor = tracePaceToColor(traceDailyPace.result);
+    assert.equal(tracePaceResult.result.dailyRemainingPercent, prodDailyRemaining);
+    assert.equal(traceDailyPace.result, prodDailyPace);
+    assert.equal(traceDailyColor.result, prodDailyColor);
+});
+
+test('production/debug equivalence: weekly remaining, pace, color', () => {
+    const resetAt = '2026-07-20T18:00:00+02:00';
+    const lastUpdated = '2026-07-16T12:00:00+02:00';
+    const weeklyPercent = 60;
+    // Production path
+    const prodWeeklyElapsed = elapsedFractionOfWeek(resetAt, lastUpdated);
+    const prodWeeklyPace = weeklyConsumptionPace({quotaRemainingPercent: weeklyPercent, elapsedFraction: prodWeeklyElapsed});
+    const prodWeeklyColor = weeklyPaceColor(prodWeeklyPace);
+    // Trace path
+    const traceElapsed = traceElapsedFractionOfWeek(resetAt, lastUpdated);
+    const traceWeeklyPace = traceWeeklyConsumptionPace({quotaRemainingPercent: weeklyPercent, elapsedFraction: traceElapsed.result});
+    const traceWeeklyColor = traceWeeklyPaceColor(traceWeeklyPace.result);
+    assert.equal(traceElapsed.result, prodWeeklyElapsed);
+    assert.equal(traceWeeklyPace.result, prodWeeklyPace);
+    assert.equal(traceWeeklyColor.result, prodWeeklyColor);
 });

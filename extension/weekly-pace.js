@@ -46,76 +46,214 @@ function localCalendarDayMillis(date) {
     return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
+// ---------------------------------------------------------------------------
+// dailyLimitIndicatorLevel — shared internal
+// ---------------------------------------------------------------------------
+function _dailyLimitIndicatorLevelInternal(dailyRemainingPercent) {
+    const trace = {
+        input: dailyRemainingPercent,
+        isFinite: Number.isFinite(dailyRemainingPercent),
+        isOver100: Number.isFinite(dailyRemainingPercent) ? dailyRemainingPercent > 100 : null,
+        clamped: null,
+        rounded: null,
+        result: null,
+    };
+    if (!Number.isFinite(dailyRemainingPercent)) {
+        trace.result = 'unknown';
+        return {result: trace.result, trace};
+    }
+    if (dailyRemainingPercent > 100) {
+        trace.result = 'over';
+        return {result: trace.result, trace};
+    }
+    trace.clamped = Math.max(0, dailyRemainingPercent);
+    trace.rounded = Math.round(trace.clamped);
+    trace.result = String(trace.rounded);
+    return {result: trace.result, trace};
+}
+
 export function dailyLimitIndicatorLevel(dailyRemainingPercent) {
-    if (!Number.isFinite(dailyRemainingPercent))
-        return 'unknown';
-    if (dailyRemainingPercent > 100)
-        return 'over';
-    return String(Math.round(Math.max(0, dailyRemainingPercent)));
+    return _dailyLimitIndicatorLevelInternal(dailyRemainingPercent).result;
+}
+
+export function traceDailyLimitIndicatorLevel(dailyRemainingPercent) {
+    return _dailyLimitIndicatorLevelInternal(dailyRemainingPercent);
+}
+
+// ---------------------------------------------------------------------------
+// limitIndicatorColor — shared internal
+// ---------------------------------------------------------------------------
+function _limitIndicatorColorInternal(remainingPercent) {
+    const trace = {
+        input: remainingPercent,
+        isFinite: Number.isFinite(remainingPercent),
+        boundedPercent: null,
+        selectedIndex: null,
+        lowerPercent: null,
+        upperPercent: null,
+        lowerColor: null,
+        upperColor: null,
+        ratio: null,
+        lowerRgb: null,
+        upperRgb: null,
+        interpolatedRgb: null,
+        result: null,
+    };
+    if (!Number.isFinite(remainingPercent)) {
+        trace.result = null;
+        return {result: null, trace};
+    }
+    trace.boundedPercent = Math.max(0, Math.min(100, remainingPercent));
+    for (let index = 1; index < LIMIT_COLOR_STOPS.length; index++) {
+        const [upperPercent, upperColor] = LIMIT_COLOR_STOPS[index];
+        const [lowerPercent, lowerColor] = LIMIT_COLOR_STOPS[index - 1];
+        if (trace.boundedPercent > upperPercent)
+            continue;
+        trace.selectedIndex = index;
+        trace.lowerPercent = lowerPercent;
+        trace.upperPercent = upperPercent;
+        trace.lowerColor = lowerColor;
+        trace.upperColor = upperColor;
+        trace.ratio = (trace.boundedPercent - lowerPercent) / (upperPercent - lowerPercent);
+        trace.lowerRgb = hexToRgb(lowerColor);
+        trace.upperRgb = hexToRgb(upperColor);
+        trace.interpolatedRgb = trace.lowerRgb.map((component, componentIndex) => Math.round(component + (trace.upperRgb[componentIndex] - component) * trace.ratio));
+        trace.result = rgbToHex(trace.interpolatedRgb);
+        return {result: trace.result, trace};
+    }
+    trace.selectedIndex = LIMIT_COLOR_STOPS.length - 1;
+    trace.result = LIMIT_COLOR_STOPS[LIMIT_COLOR_STOPS.length - 1][1];
+    return {result: trace.result, trace};
+}
+
+export function limitIndicatorColor(remainingPercent) {
+    return _limitIndicatorColorInternal(remainingPercent).result;
+}
+
+export function traceLimitIndicatorColor(remainingPercent) {
+    return _limitIndicatorColorInternal(remainingPercent);
 }
 
 export function dailyLimitIndicatorColor(remainingPercent) {
     return limitIndicatorColor(remainingPercent);
 }
 
-export function limitIndicatorColor(remainingPercent) {
-    if (!Number.isFinite(remainingPercent))
-        return null;
+export function traceDailyLimitIndicatorColor(remainingPercent) {
+    return traceLimitIndicatorColor(remainingPercent);
+}
 
-    const boundedPercent = Math.max(0, Math.min(100, remainingPercent));
-    for (let index = 1; index < LIMIT_COLOR_STOPS.length; index++) {
-        const [upperPercent, upperColor] = LIMIT_COLOR_STOPS[index];
-        const [lowerPercent, lowerColor] = LIMIT_COLOR_STOPS[index - 1];
-        if (boundedPercent > upperPercent)
-            continue;
-
-        const ratio = (boundedPercent - lowerPercent) / (upperPercent - lowerPercent);
-        const lowerRgb = hexToRgb(lowerColor);
-        const upperRgb = hexToRgb(upperColor);
-        const rgb = lowerRgb.map((component, componentIndex) => Math.round(component + (upperRgb[componentIndex] - component) * ratio));
-        return rgbToHex(rgb);
+// ---------------------------------------------------------------------------
+// normalizePace — shared internal
+// ---------------------------------------------------------------------------
+function _normalizePaceInternal(pace, min, max) {
+    const trace = {
+        pace,
+        min,
+        max,
+        isFinite: Number.isFinite(pace),
+        clamped: null,
+        normalized: null,
+        result: null,
+    };
+    if (!Number.isFinite(pace)) {
+        trace.result = null;
+        return {result: null, trace};
     }
-
-    return LIMIT_COLOR_STOPS[LIMIT_COLOR_STOPS.length - 1][1];
+    trace.clamped = Math.max(min, Math.min(max, pace));
+    trace.normalized = ((trace.clamped - min) / (max - min)) * 100;
+    trace.result = trace.normalized;
+    return {result: trace.result, trace};
 }
 
 export function normalizePace(pace, min, max) {
-    if (!Number.isFinite(pace))
-        return null;
-    const clamped = Math.max(min, Math.min(max, pace));
-    return ((clamped - min) / (max - min)) * 100;
+    return _normalizePaceInternal(pace, min, max).result;
 }
 
-export function paceColor(pace, min, max) {
-    const normalized = normalizePace(pace, min, max);
-    if (normalized === null)
-        return null;
+export function traceNormalizePace(pace, min, max) {
+    return _normalizePaceInternal(pace, min, max);
+}
+
+// ---------------------------------------------------------------------------
+// paceColor — shared internal
+// ---------------------------------------------------------------------------
+function _paceColorInternal(pace, min, max) {
+    const trace = {
+        pace,
+        min,
+        max,
+        normalizeTrace: null,
+        normalized: null,
+        selectedIndex: null,
+        lowerPercent: null,
+        upperPercent: null,
+        lowerColor: null,
+        upperColor: null,
+        ratio: null,
+        lowerRgb: null,
+        upperRgb: null,
+        interpolatedRgb: null,
+        result: null,
+    };
+    const normInternal = _normalizePaceInternal(pace, min, max);
+    trace.normalizeTrace = normInternal.trace;
+    trace.normalized = normInternal.result;
+    if (normInternal.result === null) {
+        trace.result = null;
+        return {result: null, trace};
+    }
+    const normalized = normInternal.result;
     for (let index = 1; index < PACE_COLOR_STOPS.length; index++) {
         const [upperPercent, upperColor] = PACE_COLOR_STOPS[index];
         const [lowerPercent, lowerColor] = PACE_COLOR_STOPS[index - 1];
         if (normalized > upperPercent)
             continue;
-
-        const ratio = (normalized - lowerPercent) / (upperPercent - lowerPercent);
-        const lowerRgb = hexToRgb(lowerColor);
-        const upperRgb = hexToRgb(upperColor);
-        const rgb = lowerRgb.map((component, componentIndex) => Math.round(component + (upperRgb[componentIndex] - component) * ratio));
-        return rgbToHex(rgb);
+        trace.selectedIndex = index;
+        trace.lowerPercent = lowerPercent;
+        trace.upperPercent = upperPercent;
+        trace.lowerColor = lowerColor;
+        trace.upperColor = upperColor;
+        trace.ratio = (normalized - lowerPercent) / (upperPercent - lowerPercent);
+        trace.lowerRgb = hexToRgb(lowerColor);
+        trace.upperRgb = hexToRgb(upperColor);
+        trace.interpolatedRgb = trace.lowerRgb.map((component, componentIndex) => Math.round(component + (trace.upperRgb[componentIndex] - component) * trace.ratio));
+        trace.result = rgbToHex(trace.interpolatedRgb);
+        return {result: trace.result, trace};
     }
+    trace.selectedIndex = PACE_COLOR_STOPS.length - 1;
+    trace.result = PACE_COLOR_STOPS[PACE_COLOR_STOPS.length - 1][1];
+    return {result: trace.result, trace};
+}
 
-    return PACE_COLOR_STOPS[PACE_COLOR_STOPS.length - 1][1];
+export function paceColor(pace, min, max) {
+    return _paceColorInternal(pace, min, max).result;
+}
+
+export function tracePaceColor(pace, min, max) {
+    return _paceColorInternal(pace, min, max);
 }
 
 export function dailyPaceColor(pace) {
     return paceColor(pace, DAILY_PACE_MIN, DAILY_PACE_MAX);
 }
 
+export function traceDailyPaceColor(pace) {
+    return _paceColorInternal(pace, DAILY_PACE_MIN, DAILY_PACE_MAX);
+}
+
 export function sessionPaceColor(pace) {
     return paceColor(pace, SESSION_PACE_MIN, SESSION_PACE_MAX);
 }
 
+export function traceSessionPaceColor(pace) {
+    return _paceColorInternal(pace, SESSION_PACE_MIN, SESSION_PACE_MAX);
+}
+
 export function weeklyPaceColor(pace) {
     return paceToColor(pace);
+}
+
+export function traceWeeklyPaceColor(pace) {
+    return tracePaceToColor(pace);
 }
 
 const PACE_THRESHOLDS = [
@@ -126,43 +264,156 @@ const PACE_THRESHOLDS = [
     {max: Infinity, color: '#B91C1C'},
 ];
 
+// ---------------------------------------------------------------------------
+// dailyConsumptionPace — shared internal
+// ---------------------------------------------------------------------------
+function _dailyConsumptionPaceInternal({actualUsage, expectedUsage}) {
+    const trace = {
+        actualUsage,
+        expectedUsage,
+        isActualFinite: Number.isFinite(actualUsage),
+        isExpectedFinite: Number.isFinite(expectedUsage),
+        isZeroZero: false,
+        isInfiniteCase: false,
+        ratio: null,
+        result: null,
+    };
+    if (!Number.isFinite(actualUsage) || !Number.isFinite(expectedUsage)) {
+        trace.result = null;
+        return {result: null, trace};
+    }
+    if (expectedUsage === 0 && actualUsage === 0) {
+        trace.isZeroZero = true;
+        trace.result = 1.0;
+        return {result: 1.0, trace};
+    }
+    if (expectedUsage === 0 && actualUsage > 0) {
+        trace.isInfiniteCase = true;
+        trace.result = Infinity;
+        return {result: Infinity, trace};
+    }
+    trace.ratio = actualUsage / expectedUsage;
+    trace.result = trace.ratio;
+    return {result: trace.result, trace};
+}
+
 export function dailyConsumptionPace({actualUsage, expectedUsage}) {
-    if (!Number.isFinite(actualUsage) || !Number.isFinite(expectedUsage))
-        return null;
-    if (expectedUsage === 0 && actualUsage === 0)
-        return 1.0;
-    if (expectedUsage === 0 && actualUsage > 0)
-        return Infinity;
-    return actualUsage / expectedUsage;
+    return _dailyConsumptionPaceInternal({actualUsage, expectedUsage}).result;
+}
+
+export function traceDailyConsumptionPace({actualUsage, expectedUsage}) {
+    return _dailyConsumptionPaceInternal({actualUsage, expectedUsage});
+}
+
+// ---------------------------------------------------------------------------
+// elapsedFractionOfWeek — shared internal
+// ---------------------------------------------------------------------------
+function _elapsedFractionOfWeekInternal(resetAt, lastUpdated) {
+    const trace = {
+        resetAt,
+        lastUpdated,
+        resetAtMillis: Date.parse(resetAt || ''),
+        lastUpdatedMillis: Date.parse(lastUpdated || ''),
+        isResetFinite: null,
+        isLastUpdatedFinite: null,
+        weekMillis: 7 * DAY_MILLIS,
+        windowStartMillis: null,
+        elapsedMillis: null,
+        rawFraction: null,
+        clampedFraction: null,
+        result: null,
+    };
+    trace.isResetFinite = Number.isFinite(trace.resetAtMillis);
+    trace.isLastUpdatedFinite = Number.isFinite(trace.lastUpdatedMillis);
+    if (!trace.isResetFinite || !trace.isLastUpdatedFinite) {
+        trace.result = null;
+        return {result: null, trace};
+    }
+    trace.windowStartMillis = weekStartMillis(trace.resetAtMillis);
+    trace.elapsedMillis = Math.max(0, trace.lastUpdatedMillis - trace.windowStartMillis);
+    trace.rawFraction = trace.elapsedMillis / trace.weekMillis;
+    trace.clampedFraction = Math.min(1, trace.rawFraction);
+    trace.result = trace.clampedFraction;
+    return {result: trace.result, trace};
 }
 
 export function elapsedFractionOfWeek(resetAt, lastUpdated) {
-    const resetAtMillis = Date.parse(resetAt || '');
-    const lastUpdatedMillis = Date.parse(lastUpdated || '');
-    if (!Number.isFinite(resetAtMillis) || !Number.isFinite(lastUpdatedMillis))
-        return null;
-    const weekMillis = 7 * DAY_MILLIS;
-    const windowStartMillis = weekStartMillis(resetAtMillis);
-    const elapsedMillis = Math.max(0, lastUpdatedMillis - windowStartMillis);
-    return Math.min(1, elapsedMillis / weekMillis);
+    return _elapsedFractionOfWeekInternal(resetAt, lastUpdated).result;
+}
+
+export function traceElapsedFractionOfWeek(resetAt, lastUpdated) {
+    return _elapsedFractionOfWeekInternal(resetAt, lastUpdated);
+}
+
+// ---------------------------------------------------------------------------
+// weeklyConsumptionPace — shared internal
+// ---------------------------------------------------------------------------
+function _weeklyConsumptionPaceInternal({quotaRemainingPercent, elapsedFraction}) {
+    const trace = {
+        quotaRemainingPercent,
+        elapsedFraction,
+        isQuotaFinite: Number.isFinite(quotaRemainingPercent),
+        isElapsedFinite: Number.isFinite(elapsedFraction),
+        actualUsage: null,
+        expectedUsage: null,
+        dailyPaceTrace: null,
+        result: null,
+    };
+    if (!Number.isFinite(quotaRemainingPercent) || !Number.isFinite(elapsedFraction)) {
+        trace.result = null;
+        return {result: null, trace};
+    }
+    trace.actualUsage = 100 - quotaRemainingPercent;
+    trace.expectedUsage = elapsedFraction * 100;
+    const inner = _dailyConsumptionPaceInternal({actualUsage: trace.actualUsage, expectedUsage: trace.expectedUsage});
+    trace.dailyPaceTrace = inner.trace;
+    trace.result = inner.result;
+    return {result: trace.result, trace};
 }
 
 export function weeklyConsumptionPace({quotaRemainingPercent, elapsedFraction}) {
-    if (!Number.isFinite(quotaRemainingPercent) || !Number.isFinite(elapsedFraction))
-        return null;
-    const actualUsage = 100 - quotaRemainingPercent;
-    const expectedUsage = elapsedFraction * 100;
-    return dailyConsumptionPace({actualUsage, expectedUsage});
+    return _weeklyConsumptionPaceInternal({quotaRemainingPercent, elapsedFraction}).result;
+}
+
+export function traceWeeklyConsumptionPace({quotaRemainingPercent, elapsedFraction}) {
+    return _weeklyConsumptionPaceInternal({quotaRemainingPercent, elapsedFraction});
+}
+
+// ---------------------------------------------------------------------------
+// paceToColor — shared internal
+// ---------------------------------------------------------------------------
+function _paceToColorInternal(pace) {
+    const trace = {
+        pace,
+        isFinite: Number.isFinite(pace),
+        selectedThreshold: null,
+        selectedColor: null,
+        result: null,
+    };
+    if (!Number.isFinite(pace)) {
+        trace.result = null;
+        return {result: null, trace};
+    }
+    for (const {max, color} of PACE_THRESHOLDS) {
+        if (pace <= max) {
+            trace.selectedThreshold = max;
+            trace.selectedColor = color;
+            trace.result = color;
+            return {result: color, trace};
+        }
+    }
+    trace.selectedThreshold = PACE_THRESHOLDS[PACE_THRESHOLDS.length - 1].max;
+    trace.selectedColor = PACE_THRESHOLDS[PACE_THRESHOLDS.length - 1].color;
+    trace.result = trace.selectedColor;
+    return {result: trace.result, trace};
 }
 
 export function paceToColor(pace) {
-    if (!Number.isFinite(pace))
-        return null;
-    for (const {max, color} of PACE_THRESHOLDS) {
-        if (pace <= max)
-            return color;
-    }
-    return PACE_THRESHOLDS[PACE_THRESHOLDS.length - 1].color;
+    return _paceToColorInternal(pace).result;
+}
+
+export function tracePaceToColor(pace) {
+    return _paceToColorInternal(pace);
 }
 
 export function resolveLimitIndicatorPercents({sessionPercent, weeklyPercent}) {
@@ -173,21 +424,61 @@ export function resolveLimitIndicatorPercents({sessionPercent, weeklyPercent}) {
     };
 }
 
+// ---------------------------------------------------------------------------
+// calculateSessionPace — shared internal
+// ---------------------------------------------------------------------------
+function _calculateSessionPaceInternal({sessionPercent, sessionResetAt, lastUpdated, sessionWindowMins}) {
+    const trace = {
+        sessionPercent,
+        sessionResetAt,
+        lastUpdated,
+        sessionWindowMins,
+        isSessionPercentFinite: Number.isFinite(sessionPercent),
+        isWindowValid: Number.isFinite(sessionWindowMins) ? sessionWindowMins > 0 : false,
+        resetAtMillis: null,
+        lastUpdatedMillis: null,
+        isResetFinite: null,
+        isLastUpdatedFinite: null,
+        sessionTotalMillis: null,
+        sessionStartMillis: null,
+        elapsedMillis: null,
+        elapsedMinutes: null,
+        timeElapsedPercentRaw: null,
+        timeElapsedPercentClamped: null,
+        rawPace: null,
+        clampedPace: null,
+        result: null,
+    };
+    if (!Number.isFinite(sessionPercent) || !Number.isFinite(sessionWindowMins) || sessionWindowMins <= 0) {
+        trace.result = null;
+        return {result: null, trace};
+    }
+    trace.resetAtMillis = Date.parse(sessionResetAt || '');
+    trace.lastUpdatedMillis = Date.parse(lastUpdated || '');
+    trace.isResetFinite = Number.isFinite(trace.resetAtMillis);
+    trace.isLastUpdatedFinite = Number.isFinite(trace.lastUpdatedMillis);
+    if (!trace.isResetFinite || !trace.isLastUpdatedFinite) {
+        trace.result = null;
+        return {result: null, trace};
+    }
+    trace.sessionTotalMillis = sessionWindowMins * 60 * 1000;
+    trace.sessionStartMillis = trace.resetAtMillis - trace.sessionTotalMillis;
+    trace.elapsedMillis = trace.lastUpdatedMillis - trace.sessionStartMillis;
+    trace.elapsedMinutes = trace.elapsedMillis / 60000;
+    trace.timeElapsedPercentRaw = (trace.elapsedMillis / trace.sessionTotalMillis) * 100;
+    trace.timeElapsedPercentClamped = Math.max(0, Math.min(100, trace.timeElapsedPercentRaw));
+    trace.rawPace = sessionPercent - trace.timeElapsedPercentClamped;
+    trace.clampedPace = Math.max(-100, Math.min(100, trace.rawPace));
+    trace.result = trace.clampedPace;
+    return {result: trace.result, trace};
+}
+
 export function calculateSessionPace({sessionPercent, sessionResetAt, lastUpdated, sessionWindowMins}) {
-    if (!Number.isFinite(sessionPercent) || !Number.isFinite(sessionWindowMins) || sessionWindowMins <= 0)
-        return null;
+    return _calculateSessionPaceInternal({sessionPercent, sessionResetAt, lastUpdated, sessionWindowMins}).result;
+}
 
-    const resetAtMillis = Date.parse(sessionResetAt || '');
-    const lastUpdatedMillis = Date.parse(lastUpdated || '');
-    if (!Number.isFinite(resetAtMillis) || !Number.isFinite(lastUpdatedMillis))
-        return null;
-
-    const sessionTotalMillis = sessionWindowMins * 60 * 1000;
-    const sessionStartMillis = resetAtMillis - sessionTotalMillis;
-    const elapsedMillis = lastUpdatedMillis - sessionStartMillis;
-    const timeElapsedPercent = Math.max(0, Math.min(100, (elapsedMillis / sessionTotalMillis) * 100));
-
-    return Math.max(-100, Math.min(100, sessionPercent - timeElapsedPercent));
+export function traceCalculateSessionPace({sessionPercent, sessionResetAt, lastUpdated, sessionWindowMins}) {
+    return _calculateSessionPaceInternal({sessionPercent, sessionResetAt, lastUpdated, sessionWindowMins});
 }
 
 function hexToRgb(hex) {
@@ -213,12 +504,51 @@ export function resolveDailyRemainingPercent({quotaRemainingPercent, resetAt, la
     return calculateWeeklyPace({quotaRemainingPercent, resetAt, lastUpdated, workdays}).dailyRemainingPercent;
 }
 
-export function calculateWeeklyPace({quotaRemainingPercent, resetAt, lastUpdated, workdays}) {
-    const resetAtMillis = Date.parse(resetAt || '');
-    const lastUpdatedMillis = Date.parse(lastUpdated || '');
+// ---------------------------------------------------------------------------
+// calculateWeeklyPace — shared internal
+// ---------------------------------------------------------------------------
+function _calculateWeeklyPaceInternal({quotaRemainingPercent, resetAt, lastUpdated, workdays}) {
+    const trace = {
+        quotaRemainingPercent,
+        resetAt,
+        lastUpdated,
+        workdays,
+        resetAtMillis: Date.parse(resetAt || ''),
+        lastUpdatedMillis: Date.parse(lastUpdated || ''),
+        isQuotaFinite: Number.isFinite(quotaRemainingPercent),
+        isResetFinite: null,
+        isLastUpdatedFinite: null,
+        isIncomplete: null,
+        boundedQuotaRemainingPercent: null,
+        weeklyStartMillis: null,
+        consumptionHorizonMillis: null,
+        fullDayBudget: null,
+        lastUpdatedDate: null,
+        localToday00: null,
+        localNextDay00: null,
+        effectiveDayStart: null,
+        effectiveDayEnd: null,
+        todayDuration: null,
+        todayDurationHours: null,
+        todayBudget: null,
+        nextDayCapped: null,
+        allowedByEOD: null,
+        actualUsage: null,
+        available: null,
+        divisor: null,
+        dailyRemainingPercent: null,
+        elapsedMillis: null,
+        elapsedFraction: null,
+        elapsedWorkdays: null,
+        todayMinimumRemainingPercent: null,
+        result: null,
+    };
+    trace.isResetFinite = Number.isFinite(trace.resetAtMillis);
+    trace.isLastUpdatedFinite = Number.isFinite(trace.lastUpdatedMillis);
 
-    if (!Number.isFinite(quotaRemainingPercent) || !Number.isFinite(resetAtMillis) || !Number.isFinite(lastUpdatedMillis)) {
-        return {
+    if (!Number.isFinite(quotaRemainingPercent) || !trace.isResetFinite || !trace.isLastUpdatedFinite) {
+        trace.isIncomplete = true;
+        trace.result = {
             level: 'unknown',
             quotaRemainingPercent: null,
             todayMinimumRemainingPercent: null,
@@ -228,45 +558,58 @@ export function calculateWeeklyPace({quotaRemainingPercent, resetAt, lastUpdated
             budgetPerWorkday: null,
             elapsedFraction: null,
         };
+        return {result: trace.result, trace};
     }
 
-    const boundedQuotaRemainingPercent = Math.max(0, Math.min(100, quotaRemainingPercent));
-    const weeklyStartMillis = weekStartMillis(resetAtMillis);
-    const consumptionHorizonMillis = weeklyStartMillis + workdays * DAY_MILLIS;
-    const fullDayBudget = 100 / workdays;
+    trace.isIncomplete = false;
+    trace.boundedQuotaRemainingPercent = Math.max(0, Math.min(100, quotaRemainingPercent));
+    trace.weeklyStartMillis = weekStartMillis(trace.resetAtMillis);
+    trace.consumptionHorizonMillis = trace.weeklyStartMillis + workdays * DAY_MILLIS;
+    trace.fullDayBudget = 100 / workdays;
 
-    const lastUpdatedDate = new Date(lastUpdatedMillis);
-    const localToday00 = localMidnightEpochMillis(lastUpdatedDate);
-    const localNextDay00 = nextLocalMidnightEpochMillis(lastUpdatedDate);
+    trace.lastUpdatedDate = new Date(trace.lastUpdatedMillis);
+    trace.localToday00 = localMidnightEpochMillis(trace.lastUpdatedDate);
+    trace.localNextDay00 = nextLocalMidnightEpochMillis(trace.lastUpdatedDate);
 
-    const effectiveDayStart = Math.max(localToday00, weeklyStartMillis);
-    const effectiveDayEnd = Math.min(localNextDay00, consumptionHorizonMillis);
-    const todayDuration = Math.max(0, effectiveDayEnd - effectiveDayStart);
-    const todayBudget = todayDuration / DAY_MILLIS * fullDayBudget;
+    trace.effectiveDayStart = Math.max(trace.localToday00, trace.weeklyStartMillis);
+    trace.effectiveDayEnd = Math.min(trace.localNextDay00, trace.consumptionHorizonMillis);
+    trace.todayDuration = Math.max(0, trace.effectiveDayEnd - trace.effectiveDayStart);
+    trace.todayDurationHours = trace.todayDuration / (60 * 60 * 1000);
+    trace.todayBudget = trace.todayDuration / DAY_MILLIS * trace.fullDayBudget;
 
-    const allowedByEOD = Math.max(0, Math.min(100,
-        (Math.min(localNextDay00, consumptionHorizonMillis) - weeklyStartMillis)
+    trace.nextDayCapped = Math.min(trace.localNextDay00, trace.consumptionHorizonMillis);
+    trace.allowedByEOD = Math.max(0, Math.min(100,
+        (trace.nextDayCapped - trace.weeklyStartMillis)
         / (workdays * DAY_MILLIS)
         * 100
     ));
 
-    const actualUsage = 100 - boundedQuotaRemainingPercent;
-    const available = allowedByEOD - actualUsage;
-    const divisor = todayBudget > 0 ? todayBudget : fullDayBudget;
-    const dailyRemainingPercent = available / divisor * 100;
+    trace.actualUsage = 100 - trace.boundedQuotaRemainingPercent;
+    trace.available = trace.allowedByEOD - trace.actualUsage;
+    trace.divisor = trace.todayBudget > 0 ? trace.todayBudget : trace.fullDayBudget;
+    trace.dailyRemainingPercent = trace.available / trace.divisor * 100;
 
-    const elapsedMillis = Math.max(0, lastUpdatedMillis - weeklyStartMillis);
-    const elapsedFraction = Math.min(1, elapsedMillis / (workdays * DAY_MILLIS));
-    const elapsedWorkdays = elapsedFraction * workdays;
-    const todayMinimumRemainingPercent = Math.max(0, 100 - elapsedWorkdays * fullDayBudget);
+    trace.elapsedMillis = Math.max(0, trace.lastUpdatedMillis - trace.weeklyStartMillis);
+    trace.elapsedFraction = Math.min(1, trace.elapsedMillis / (workdays * DAY_MILLIS));
+    trace.elapsedWorkdays = trace.elapsedFraction * workdays;
+    trace.todayMinimumRemainingPercent = Math.max(0, 100 - trace.elapsedWorkdays * trace.fullDayBudget);
 
-    return {
-        quotaRemainingPercent: boundedQuotaRemainingPercent,
-        todayMinimumRemainingPercent,
-        dailyRemainingPercent,
-        elapsedWorkdays,
+    trace.result = {
+        quotaRemainingPercent: trace.boundedQuotaRemainingPercent,
+        todayMinimumRemainingPercent: trace.todayMinimumRemainingPercent,
+        dailyRemainingPercent: trace.dailyRemainingPercent,
+        elapsedWorkdays: trace.elapsedWorkdays,
         workdays,
-        budgetPerWorkday: fullDayBudget,
-        elapsedFraction,
+        budgetPerWorkday: trace.fullDayBudget,
+        elapsedFraction: trace.elapsedFraction,
     };
+    return {result: trace.result, trace};
+}
+
+export function calculateWeeklyPace({quotaRemainingPercent, resetAt, lastUpdated, workdays}) {
+    return _calculateWeeklyPaceInternal({quotaRemainingPercent, resetAt, lastUpdated, workdays}).result;
+}
+
+export function traceCalculateWeeklyPace({quotaRemainingPercent, resetAt, lastUpdated, workdays}) {
+    return _calculateWeeklyPaceInternal({quotaRemainingPercent, resetAt, lastUpdated, workdays});
 }

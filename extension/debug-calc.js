@@ -1,0 +1,246 @@
+#!/usr/bin/env node
+// debug-calc.js — consumes a helper payload (JSON on stdin) and emits a
+// full calculation trace (JSON on stdout) using the same weekly-pace.js
+// functions that the GNOME extension uses for display.
+
+import {
+    traceCalculateSessionPace,
+    traceCalculateWeeklyPace,
+    traceDailyConsumptionPace,
+    traceElapsedFractionOfWeek,
+    traceWeeklyConsumptionPace,
+    tracePaceToColor,
+    tracePaceColor,
+    traceLimitIndicatorColor,
+    traceDailyLimitIndicatorLevel,
+    traceNormalizePace,
+} from './weekly-pace.js';
+
+import fs from 'node:fs';
+
+function readStdin() {
+    return fs.readFileSync(0, 'utf-8');
+}
+
+function safeJsonParse(text) {
+    try {
+        return JSON.parse(text);
+    } catch {
+        return {};
+    }
+}
+
+function buildTrace(payload) {
+    const weeklyPercent = payload?.weekly_percent;
+    const weeklyUsedPercent = payload?.weekly_used_percent;
+    const weeklyResetAt = payload?.weekly_reset_at ?? null;
+    const sessionPercent = payload?.session_percent ?? null;
+    const sessionUsedPercent = payload?.session_used_percent ?? null;
+    const sessionResetAt = payload?.session_reset_at ?? null;
+    const sessionWindowMins = payload?.session_window_mins ?? null;
+    const lastUpdated = payload?.last_updated ?? null;
+    const weeklyWorkdays = payload?.settings?.weekly_workdays ?? 5;
+    const ok = payload?.ok ?? false;
+    const status = payload?.status ?? 'unknown';
+    const sourceLabel = payload?.source_label ?? null;
+    const hasLastSuccess = payload?.last_success != null;
+    const isStale = hasLastSuccess && !ok;
+
+    // --- Session block ---
+    const sessionPaceTrace = traceCalculateSessionPace({
+        sessionPercent,
+        sessionResetAt,
+        lastUpdated,
+        sessionWindowMins,
+    });
+    const sessionPace = sessionPaceTrace.result;
+    // session remaining
+    const sessionRemainingRaw = sessionPercent;
+    const sessionRemainingClamped = Number.isFinite(sessionPercent) ? Math.max(0, Math.min(100, sessionPercent)) : null;
+    const sessionRemainingRounded = Number.isFinite(sessionRemainingClamped) ? Math.round(sessionRemainingClamped) : null;
+
+    // session colors: gradient via paceColor, fallback via limitIndicatorColor
+    const sessionPaceColorTrace = sessionPace !== null
+        ? tracePaceColor(sessionPace, -100, 100)
+        : {result: null, trace: {pace: sessionPace, reason: 'pace is null, no gradient color'}};
+    const sessionFallbackColorTrace = traceLimitIndicatorColor(sessionPercent);
+    const sessionEffectiveColor = sessionPaceColorTrace.result ?? sessionFallbackColorTrace.result;
+    const sessionLevelTrace = traceDailyLimitIndicatorLevel(sessionPercent);
+
+    // --- Daily block ---
+    // Use traceCalculateWeeklyPace for the EOD-normalized daily remaining + elapsedFraction
+    const weeklyPaceTrace = traceCalculateWeeklyPace({
+        quotaRemainingPercent: weeklyPercent,
+        resetAt: weeklyResetAt,
+        lastUpdated,
+        workdays: weeklyWorkdays,
+    });
+    const paceResult = weeklyPaceTrace.result;
+    const dailyRemainingPercent = paceResult?.dailyRemainingPercent ?? null;
+
+    // Daily pace: actualUsage / expectedUsage where expected = elapsedFraction * 100
+    let dailyPaceTrace;
+    if (paceResult?.elapsedFraction != null && Number.isFinite(weeklyPercent)) {
+        const actualUsage = 100 - weeklyPercent;
+        const expectedUsage = paceResult.elapsedFraction * 100;
+        dailyPaceTrace = traceDailyConsumptionPace({actualUsage, expectedUsage});
+    } else {
+        dailyPaceTrace = {result: null, trace: {reason: 'elapsedFraction or weeklyPercent unavailable', elapsedFraction: paceResult?.elapsedFraction ?? null, weeklyPercent}};
+    }
+    const dailyPace = dailyPaceTrace.result;
+    const dailyPaceColorTrace = tracePaceToColor(dailyPace);
+    const dailyFallbackColorTrace = traceLimitIndicatorColor(dailyRemainingPercent);
+    const dailyEffectiveColor = dailyPaceColorTrace.result ?? dailyFallbackColorTrace.result;
+    const dailyLevelTrace = traceDailyLimitIndicatorLevel(dailyRemainingPercent);
+
+    // --- Weekly block ---
+    const weeklyElapsedTrace = traceElapsedFractionOfWeek(weeklyResetAt, lastUpdated);
+    let weeklyPaceTrace2;
+    if (weeklyElapsedTrace.result != null && Number.isFinite(weeklyPercent)) {
+        weeklyPaceTrace2 = traceWeeklyConsumptionPace({
+            quotaRemainingPercent: weeklyPercent,
+            elapsedFraction: weeklyElapsedTrace.result,
+        });
+    } else {
+        weeklyPaceTrace2 = {result: null, trace: {reason: 'elapsedFraction or weeklyPercent unavailable', elapsedFraction: weeklyElapsedTrace.result, weeklyPercent}};
+    }
+    const weeklyPace = weeklyPaceTrace2.result;
+    const weeklyPaceColorTrace = tracePaceToColor(weeklyPace);
+    const weeklyFallbackColorTrace = traceLimitIndicatorColor(weeklyPercent);
+    const weeklyEffectiveColor = weeklyPaceColorTrace.result ?? weeklyFallbackColorTrace.result;
+    const weeklyLevelTrace = traceDailyLimitIndicatorLevel(weeklyPercent);
+
+    // Weekly remaining (simple)
+    const weeklyRemainingClamped = Number.isFinite(weeklyPercent) ? Math.max(0, Math.min(100, weeklyPercent)) : null;
+    const weeklyRemainingRounded = Number.isFinite(weeklyRemainingClamped) ? Math.round(weeklyRemainingClamped) : null;
+
+    return {
+        _meta: {
+            ok,
+            status,
+            sourceLabel,
+            isStale,
+            hasLastSuccess,
+            lastUpdated,
+            weeklyResetAt,
+            sessionResetAt,
+            sessionWindowMins,
+            weeklyWorkdays,
+            sessionPercent,
+            sessionUsedPercent,
+            weeklyPercent,
+            weeklyUsedPercent,
+        },
+        session: {
+            input: {
+                sessionPercent,
+                sessionUsedPercent,
+                sessionResetAt,
+                sessionWindowMins,
+                lastUpdated,
+            },
+            remaining: {
+                raw: sessionRemainingRaw,
+                clamped: sessionRemainingClamped,
+                rounded: sessionRemainingRounded,
+            },
+            pace: {
+                result: sessionPace,
+                trace: sessionPaceTrace.trace,
+            },
+            paceColor: {
+                result: sessionPaceColorTrace.result,
+                trace: sessionPaceColorTrace.trace,
+                fallback: sessionFallbackColorTrace,
+                effective: sessionEffectiveColor,
+            },
+            indicatorLevel: {
+                result: sessionLevelTrace.result,
+                trace: sessionLevelTrace.trace,
+                fallbackColor: sessionFallbackColorTrace.result,
+            },
+        },
+        daily: {
+            input: {
+                weeklyPercent,
+                weeklyUsedPercent,
+                weeklyResetAt,
+                lastUpdated,
+                weeklyWorkdays,
+            },
+            weeklyPaceResult: {
+                result: paceResult,
+                trace: weeklyPaceTrace.trace,
+            },
+            remaining: {
+                result: dailyRemainingPercent,
+                trace: weeklyPaceTrace.trace,
+            },
+            pace: {
+                result: dailyPace,
+                trace: dailyPaceTrace.trace,
+            },
+            paceColor: {
+                result: dailyPaceColorTrace.result,
+                trace: dailyPaceColorTrace.trace,
+                fallback: dailyFallbackColorTrace,
+                effective: dailyEffectiveColor,
+            },
+            indicatorLevel: {
+                result: dailyLevelTrace.result,
+                trace: dailyLevelTrace.trace,
+                fallbackColor: dailyFallbackColorTrace.result,
+            },
+        },
+        weekly: {
+            input: {
+                weeklyPercent,
+                weeklyUsedPercent,
+                weeklyResetAt,
+                lastUpdated,
+            },
+            remaining: {
+                raw: weeklyPercent,
+                clamped: weeklyRemainingClamped,
+                rounded: weeklyRemainingRounded,
+            },
+            elapsedFraction: {
+                result: weeklyElapsedTrace.result,
+                trace: weeklyElapsedTrace.trace,
+            },
+            pace: {
+                result: weeklyPace,
+                trace: weeklyPaceTrace2.trace,
+            },
+            paceColor: {
+                result: weeklyPaceColorTrace.result,
+                trace: weeklyPaceColorTrace.trace,
+                fallback: weeklyFallbackColorTrace,
+                effective: weeklyEffectiveColor,
+            },
+            indicatorLevel: {
+                result: weeklyLevelTrace.result,
+                trace: weeklyLevelTrace.trace,
+                fallbackColor: weeklyFallbackColorTrace.result,
+            },
+        },
+        // Raw payload passthrough for freshness checks
+        payload,
+    };
+}
+
+function main() {
+    const input = readStdin();
+    const payload = input.trim() ? safeJsonParse(input) : {};
+    const trace = buildTrace(payload);
+    // Use a replacer that handles Infinity / -Infinity
+    const json = JSON.stringify(trace, (_key, value) => {
+        if (value === Infinity) return '__INFINITY__';
+        if (value === -Infinity) return '__NEG_INFINITY__';
+        if (Number.isNaN(value)) return '__NAN__';
+        return value;
+    });
+    process.stdout.write(json + '\n');
+}
+
+main();
