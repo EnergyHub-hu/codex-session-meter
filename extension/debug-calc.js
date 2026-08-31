@@ -9,7 +9,7 @@ import {
     traceElapsedFractionOfConsumptionHorizon,
     traceWeeklyConsumptionPace,
     tracePaceToColor,
-    tracePaceColor,
+    traceSessionPaceColor,
     traceLimitIndicatorColor,
     traceDailyLimitIndicatorLevel,
     traceNormalizePace,
@@ -61,10 +61,10 @@ function buildTrace(payload) {
     const sessionRemainingClamped = sessionFallbackColorTrace.trace.boundedPercent;
     const sessionRemainingRounded = Number.isFinite(sessionRemainingClamped) ? Math.round(sessionRemainingClamped) : null;
 
-    // session colors: gradient via paceColor, fallback via limitIndicatorColor
+    // Session health color uses the same discrete band mapping as production.
     const sessionPaceColorTrace = sessionPace !== null
-        ? tracePaceColor(sessionPace, -100, 100)
-        : {result: null, trace: {pace: sessionPace, reason: 'pace is null, no gradient color'}};
+        ? traceSessionPaceColor(sessionPace)
+        : {result: null, trace: {pace: sessionPace, reason: 'pace is null, no health band color'}};
     const sessionEffectiveColor = sessionPaceColorTrace.result ?? sessionFallbackColorTrace.result;
     const sessionLevelTrace = traceDailyLimitIndicatorLevel(sessionPercent);
 

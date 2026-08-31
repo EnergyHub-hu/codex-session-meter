@@ -121,6 +121,34 @@ def test_render_screen_shows_formulas_and_intermediates():
     assert "dailyRemainingPercent" in screen
 
 
+def test_render_screen_explains_semantic_session_and_weekly_health_bands():
+    from codex_session_widget.debug import get_trace, render_screen
+
+    payload = _sample_payload({
+        "session_percent": 100,
+        "session_reset_at": "2026-07-15T23:00:00+02:00",
+        "weekly_percent": 48.8,
+        "weekly_reset_at": "2026-07-20T18:00:00+02:00",
+        "last_updated": "2026-07-15T18:00:00+02:00",
+    })
+    trace = get_trace(payload)
+    screen = render_screen(
+        payload,
+        trace,
+        datetime.fromisoformat("2026-07-15T18:00:00+02:00"),
+        "test",
+        datetime.fromisoformat("2026-07-15T18:01:00+02:00"),
+        width=200,
+        use_color=False,
+    )
+
+    assert "paceDeviation = actualRemaining − expectedRemaining" in screen
+    assert "Discrete health bands (not a symmetric color gradient)" in screen
+    assert "Selected health band: green" in screen
+    assert "pace ≤ 1.30×" in screen
+    assert "Selected health band: orange" in screen
+
+
 def test_render_screen_shows_units():
     from codex_session_widget.debug import get_trace, render_screen
     payload = _sample_payload()
@@ -131,6 +159,14 @@ def test_render_screen_shows_units():
     assert "ms" in screen
     assert "pp" in screen or "percentage points" in screen or "pp" in screen
     assert "%" in screen
+
+
+def test_debug_duration_formatter_handles_negative_milliseconds():
+    from codex_session_widget.debug import _fmt_duration_millis
+
+    assert _fmt_duration_millis(-1000) == "-1 mp"
+    assert _fmt_duration_millis(1000) == "1 mp"
+    assert _fmt_duration_millis(0) == "0 mp"
 
 
 def test_render_screen_distinguishes_raw_vs_clamped():
@@ -253,7 +289,7 @@ def test_render_screen_shows_threshold_colors():
     nt = datetime.fromisoformat("2026-07-14T18:01:00+02:00")
     screen = render_screen(payload, trace, rt, "indítás", nt)
     # Threshold table should be visible
-    assert "pace <=" in screen or "Threshold" in screen
+    assert "pace ≤" in screen or "health band" in screen
     assert "#B91C1C" in screen or "#15803D" in screen
 
 

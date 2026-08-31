@@ -310,8 +310,36 @@ export function traceDailyPaceColor(pace) {
 // ---------------------------------------------------------------------------
 // sessionPaceColor — shared internal
 // ---------------------------------------------------------------------------
+const SESSION_PACE_HEALTH_BANDS = [
+    {min: -5, band: 'green', color: '#15803D'},
+    {min: -15, band: 'yellow', color: '#FACC15'},
+    {min: -30, band: 'orange', color: '#EA580C'},
+    {min: -Infinity, band: 'red', color: '#B91C1C'},
+];
+
 function _sessionPaceColorInternal(pace) {
-    return _paceColorInternal(pace, SESSION_PACE_MIN, SESSION_PACE_MAX);
+    const trace = {
+        pace,
+        isFinite: Number.isFinite(pace),
+        selectedBand: null,
+        selectedThreshold: null,
+        selectedColor: null,
+        result: null,
+    };
+    if (!Number.isFinite(pace))
+        return {result: null, trace};
+
+    for (const {min, band, color} of SESSION_PACE_HEALTH_BANDS) {
+        if (pace < min)
+            continue;
+        trace.selectedBand = band;
+        trace.selectedThreshold = min;
+        trace.selectedColor = color;
+        trace.result = color;
+        return {result: color, trace};
+    }
+
+    return {result: null, trace};
 }
 
 export function sessionPaceColor(pace) {
@@ -338,11 +366,10 @@ export function traceWeeklyPaceColor(pace) {
 }
 
 const PACE_THRESHOLDS = [
-    {max: 0.80, color: '#15803D'},
-    {max: 0.94, color: '#84CC16'},
-    {max: 1.05, color: '#FACC15'},
-    {max: 1.25, color: '#EA580C'},
-    {max: Infinity, color: '#B91C1C'},
+    {max: 1.05, band: 'green', color: '#15803D'},
+    {max: 1.15, band: 'yellow', color: '#FACC15'},
+    {max: 1.30, band: 'orange', color: '#EA580C'},
+    {max: Infinity, band: 'red', color: '#B91C1C'},
 ];
 
 // ---------------------------------------------------------------------------
@@ -557,6 +584,7 @@ function _paceToColorInternal(pace) {
         pace,
         isFinite: Number.isFinite(pace),
         selectedThreshold: null,
+        selectedBand: null,
         selectedColor: null,
         result: null,
     };
@@ -564,15 +592,17 @@ function _paceToColorInternal(pace) {
         trace.result = null;
         return {result: null, trace};
     }
-    for (const {max, color} of PACE_THRESHOLDS) {
+    for (const {max, band, color} of PACE_THRESHOLDS) {
         if (pace <= max) {
             trace.selectedThreshold = max;
+            trace.selectedBand = band;
             trace.selectedColor = color;
             trace.result = color;
             return {result: color, trace};
         }
     }
     trace.selectedThreshold = PACE_THRESHOLDS[PACE_THRESHOLDS.length - 1].max;
+    trace.selectedBand = PACE_THRESHOLDS[PACE_THRESHOLDS.length - 1].band;
     trace.selectedColor = PACE_THRESHOLDS[PACE_THRESHOLDS.length - 1].color;
     trace.result = trace.selectedColor;
     return {result: trace.result, trace};

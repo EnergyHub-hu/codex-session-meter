@@ -325,6 +325,29 @@ def _fmt_pace(v: Any, decimals: int = 6) -> str:
     except Exception:
         return "n/a"
 
+
+def _fmt_duration_millis(ms: Any) -> str:
+    """Format a signed millisecond duration without mixed-sign remainders."""
+    if ms is None or not isinstance(ms, (int, float)):
+        return "n/a"
+    if isinstance(ms, float) and (math.isnan(ms) or math.isinf(ms)):
+        return "n/a"
+    sign = "-" if ms < 0 else ""
+    total_seconds = int(abs(ms) // 1000)
+    days, remainder = divmod(total_seconds, 24 * 60 * 60)
+    hours, remainder = divmod(remainder, 60 * 60)
+    minutes, seconds = divmod(remainder, 60)
+    parts: list[str] = []
+    if days:
+        parts.append(f"{days}n")
+    if hours or days:
+        parts.append(f"{hours}ó")
+    if minutes or hours or days:
+        parts.append(f"{minutes}p")
+    if seconds or not parts:
+        parts.append(f"{seconds} mp")
+    return sign + " ".join(parts)
+
 def _fmt_millis(ms: Any) -> str:
     if ms is None or not isinstance(ms, (int, float)):
         return "n/a"
@@ -646,7 +669,7 @@ def _render_session(trace: dict, width: int | None = None, use_color: bool | Non
         rem_val = remaining.get('raw') if remaining.get('raw') is not None else session_percent
         _emit(lines, f"Remaining: {_fmt_percent(rem_val, 2)}  (kerekítve: {remaining.get('rounded') if remaining.get('rounded') is not None else 'n/a'}%)", width)
         if pace.get("result") is not None:
-            _emit(lines, f"Pace: {_fmt_number(pace.get('result'), 2)}  (remaining − elapsedPct)", width)
+            _emit(lines, f"Pace deviation: {_fmt_number(pace.get('result'), 2)} pp", width)
         else:
             _emit(lines, f"Pace: n/a  ({'hiányzó bemenet' if not has_valid else 'null'})", width)
         _emit(lines, f"Szín: {_fmt_color(pcolor.get('effective'))}  → {level.get('result', 'n/a')}", width)
@@ -706,10 +729,7 @@ def _render_session(trace: dict, width: int | None = None, use_color: bool | Non
         if elapsed_millis is not None:
             _emit(lines, f"  {pt.get('lastUpdatedMillis')} − {start_millis} = {elapsed_millis} ms", width, subsequent_indent="    ")
             if isinstance(elapsed_millis, (int, float)):
-                hrs = int(elapsed_millis // 3600000)
-                mins = int((elapsed_millis % 3600000) // 60000)
-                secs = int((elapsed_millis % 60000) // 1000)
-                _emit(lines, f"  = {hrs}ó {mins}p {secs}mp  ({_fmt_number(elapsed_mins, 2)} min)", width, subsequent_indent="    ")
+                _emit(lines, f"  = {_fmt_duration_millis(elapsed_millis)}  ({_fmt_number(elapsed_mins, 2)} min)", width, subsequent_indent="    ")
         lines.append("")
         _emit(lines, "Eltelt idő aránya:", width)
         _emit(lines, "  elapsed / total × 100", width)
@@ -718,31 +738,37 @@ def _render_session(trace: dict, width: int | None = None, use_color: bool | Non
             _emit(lines, f"  = {_fmt_number(raw_pct, 6)} %  (raw)", width, subsequent_indent="    ")
             _emit(lines, f"  clamp [0,100] → {_fmt_percent(clamped_pct, 4)}", width, subsequent_indent="    ")
         lines.append("")
-        _emit(lines, f"Remaining: {_fmt_percent(session_percent, 2)}", width)
-        _emit(lines, "Raw pace = remaining − elapsedPct:", width)
+        _emit(lines, f"Actual remaining: {_fmt_percent(session_percent, 2)}", width)
+        _emit(lines, "Expected remaining = 100 − elapsedPct:", width)
+        if clamped_pct is not None:
+            _emit(lines, f"        = 100 − {_fmt_number(clamped_pct, 4)} = {_fmt_percent(pt.get('expectedRemainingPercent'), 4)}", width, subsequent_indent="          ")
+        _emit(lines, "paceDeviation = actualRemaining − expectedRemaining:", width)
         if raw_pace is not None:
-            _emit(lines, f"        = {_fmt_number(session_percent, 2)} − {_fmt_number(clamped_pct, 4)}", width, subsequent_indent="          ")
+            _emit(lines, f"        = {_fmt_number(session_percent, 2)} − {_fmt_number(pt.get('expectedRemainingPercent'), 4)}", width, subsequent_indent="          ")
             _emit(lines, f"        = {_fmt_number(raw_pace, 4)}", width)
             _emit(lines, f"Clamp [−100, +100] → {_fmt_number(clamped_pace, 2)}", width)
-        _emit(lines, f"Final pace: {_fmt_number(pace.get('result'), 2)}", width)
+        _emit(lines, f"Final paceDeviation: {_fmt_number(pace.get('result'), 2)}", width)
 
     lines.append("")
-    lines.append(_c("COLOR / DISPLAY", ANSI_BOLD, use_color=use_color))
+    lines.append(_c("COLOR / DISPLAY — session health bands", ANSI_BOLD, use_color=use_color))
     lines.append(_hr(min(24, width), "─", use_color=use_color))
     pcolor_trace = pcolor.get("trace") or {}
     fallback = pcolor.get("fallback") if isinstance(pcolor.get("fallback"), dict) else {}
     if pace.get("result") is not None:
-        _emit(lines, f"Pace input: {_fmt_number(pace.get('result'), 2)}", width)
-        _emit(lines, "Color normalization (paceColor, min=−100, max=+100):", width)
-        clamped_n = pcolor_trace.get('normalizeTrace', {}).get('clamped') if isinstance(pcolor_trace.get('normalizeTrace'), dict) else 'n/a'
-        _emit(lines, f"  clamp [−100, 100] → {_fmt_number(clamped_n, 2) if isinstance(clamped_n, (int,float)) else 'n/a'}", width, subsequent_indent="    ")
-        _emit(lines, f"  normalized = (clamped − min)/(max−min)×100 = {_fmt_number(pcolor_trace.get('normalized'), 4)} %", width, subsequent_indent="    ")
-        if pcolor_trace.get("selectedIndex") is not None:
-            _emit(lines, f"  PACE_COLOR_STOPS intervallum: index {pcolor_trace.get('selectedIndex')}  [{pcolor_trace.get('lowerPercent')}%, {pcolor_trace.get('upperPercent')}%]", width, subsequent_indent="    ")
-            _emit(lines, f"  Alsó szín: {_fmt_color(pcolor_trace.get('lowerColor'))}  Felső szín: {_fmt_color(pcolor_trace.get('upperColor'))}", width, subsequent_indent="    ")
-            _emit(lines, f"  ratio = (norm − lower)/(upper−lower) = {_fmt_number(pcolor_trace.get('ratio'), 6)}", width, subsequent_indent="    ")
-            _emit(lines, f"  Interpolált RGB: {pcolor_trace.get('interpolatedRgb')}", width, subsequent_indent="    ")
-        _emit(lines, f"Selected / interpolated: {_fmt_color(pcolor.get('result'))}", width)
+        _emit(lines, f"paceDeviation input: {_fmt_number(pace.get('result'), 2)} pp", width)
+        _emit(lines, "Discrete health bands (not a symmetric color gradient):", width)
+        session_bands = [
+            (-5, "#15803D", "GREEN / healthy"),
+            (-15, "#FACC15", "YELLOW / watch usage"),
+            (-30, "#EA580C", "ORANGE / materially over-consuming"),
+            (float("-inf"), "#B91C1C", "RED / critical risk"),
+        ]
+        for minimum, color, label in session_bands:
+            minimum_text = "−∞" if math.isinf(minimum) else f"{minimum}"
+            marker = " ← selected" if color == pcolor_trace.get("selectedColor") else ""
+            _emit(lines, f"  deviation ≥ {minimum_text} pp → {color}  {label}{marker}", width, subsequent_indent="    ")
+        _emit(lines, f"Selected health band: {pcolor_trace.get('selectedBand', 'n/a')}", width)
+        _emit(lines, f"Selected color: {_fmt_color(pcolor.get('result'))}", width)
         _emit(lines, f"Fallback (limitIndicatorColor): {_fmt_color(fallback.get('result') if isinstance(fallback, dict) else 'n/a')}", width)
         _emit(lines, f"Effective dot color: {_fmt_color(pcolor.get('effective'))}", width)
     else:
@@ -1173,7 +1199,7 @@ def _render_weekly(trace: dict, width: int | None = None, use_color: bool | None
                 _emit(lines, "  >1.00 = gyorsabb a tervnél", width)
 
     lines.append("")
-    lines.append(_c("COLOR / DISPLAY  —  paceToColor()  küszöbök", ANSI_BOLD, use_color=use_color))
+    lines.append(_c("COLOR / DISPLAY  —  paceToColor()  health bands", ANSI_BOLD, use_color=use_color))
     lines.append(_hr(min(52, width), "─", use_color=use_color))
     pct = pcolor.get("trace") or {}
     fallback = pcolor.get("fallback") if isinstance(pcolor.get("fallback"), dict) else {}
@@ -1191,18 +1217,18 @@ def _render_weekly(trace: dict, width: int | None = None, use_color: bool | None
             if pct.get("selectedThreshold") is not None:
                 thr = pct.get("selectedThreshold")
                 bands = [
-                    (0.80, "#15803D", "zöld (lassú / takarékos)"),
-                    (0.94, "#84CC16", "világoszöld"),
-                    (1.05, "#FACC15", "sárga (terv közelében)"),
-                    (1.25, "#EA580C", "narancs (gyors)"),
-                    (float("inf"), "#B91C1C", "piros (kritikus)"),
+                    (1.05, "#15803D", "GREEN / egészséges"),
+                    (1.15, "#FACC15", "YELLOW / figyelni kell"),
+                    (1.30, "#EA580C", "ORANGE / jelentős túlfogyasztás"),
+                    (float("inf"), "#B91C1C", "RED / kritikus kockázat"),
                 ]
-                _emit(lines, "Threshold értékelés:", width)
+                _emit(lines, "Discrete health band értékelés:", width)
                 for b_thr, b_col, b_label in bands:
                     marker = " ← kiválasztott" if b_col == pct.get("selectedColor") else ""
                     thr_str = "∞" if math.isinf(b_thr) else f"{b_thr:.2f}"
                     dot = _c("●", ANSI_BOLD, use_color=use_color) if marker else "○"
-                    _emit(lines, f"  {dot} pace ≤ {thr_str}  → {b_col}  {b_label}{marker}", width, subsequent_indent="    ")
+                    _emit(lines, f"  {dot} pace ≤ {thr_str}×  → {b_col}  {b_label}{marker}", width, subsequent_indent="    ")
+                _emit(lines, f"Selected health band: {pct.get('selectedBand', 'n/a')}", width)
                 _emit(lines, f"Selected band küszöb: {thr if not math.isinf(thr) else '∞'}", width)
             _emit(lines, f"Selected color: {_fmt_color(pcolor.get('result'))}", width)
             _emit(lines, f"Fallback (limitIndicatorColor): {_fmt_color(fallback.get('result') if isinstance(fallback, dict) else 'n/a')}", width)

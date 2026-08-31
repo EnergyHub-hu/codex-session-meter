@@ -750,13 +750,12 @@ test('dailyConsumptionPace returns null for invalid input', () => {
 
 test('paceToColor returns correct colors for thresholds', () => {
     assert.equal(paceToColor(0.5), '#15803D');
-    assert.equal(paceToColor(0.8), '#15803D');
-    assert.equal(paceToColor(0.81), '#84CC16');
-    assert.equal(paceToColor(0.95), '#FACC15');
-    assert.equal(paceToColor(1.05), '#FACC15');
-    assert.equal(paceToColor(1.06), '#EA580C');
-    assert.equal(paceToColor(1.25), '#EA580C');
-    assert.equal(paceToColor(1.26), '#B91C1C');
+    assert.equal(paceToColor(1.05), '#15803D');
+    assert.equal(paceToColor(1.06), '#FACC15');
+    assert.equal(paceToColor(1.15), '#FACC15');
+    assert.equal(paceToColor(1.16), '#EA580C');
+    assert.equal(paceToColor(1.30), '#EA580C');
+    assert.equal(paceToColor(1.31), '#B91C1C');
 });
 
 test('paceToColor returns null for invalid input', () => {
@@ -767,19 +766,71 @@ test('paceToColor returns null for invalid input', () => {
 
 test('weeklyPaceColor returns correct colors for thresholds', () => {
     assert.equal(weeklyPaceColor(0.5), '#15803D');
-    assert.equal(weeklyPaceColor(0.8), '#15803D');
-    assert.equal(weeklyPaceColor(0.81), '#84CC16');
-    assert.equal(weeklyPaceColor(0.95), '#FACC15');
-    assert.equal(weeklyPaceColor(1.05), '#FACC15');
-    assert.equal(weeklyPaceColor(1.06), '#EA580C');
-    assert.equal(weeklyPaceColor(1.25), '#EA580C');
-    assert.equal(weeklyPaceColor(1.26), '#B91C1C');
+    assert.equal(weeklyPaceColor(1.05), '#15803D');
+    assert.equal(weeklyPaceColor(1.06), '#FACC15');
+    assert.equal(weeklyPaceColor(1.15), '#FACC15');
+    assert.equal(weeklyPaceColor(1.16), '#EA580C');
+    assert.equal(weeklyPaceColor(1.30), '#EA580C');
+    assert.equal(weeklyPaceColor(1.31), '#B91C1C');
 });
 
 test('weeklyPaceColor returns null for invalid input', () => {
     assert.equal(weeklyPaceColor(null), null);
     assert.equal(weeklyPaceColor(NaN), null);
     assert.equal(weeklyPaceColor(Infinity), null);
+});
+
+test('session health bands map pace deviation to semantic colors', () => {
+    const cases = [
+        [50, '#15803D'],
+        [1, '#15803D'],
+        [0, '#15803D'],
+        [-5, '#15803D'],
+        [-5.0001, '#FACC15'],
+        [-10, '#FACC15'],
+        [-15, '#FACC15'],
+        [-15.0001, '#EA580C'],
+        [-20, '#EA580C'],
+        [-30, '#EA580C'],
+        [-30.0001, '#B91C1C'],
+        [-50, '#B91C1C'],
+    ];
+
+    for (const [deviation, expected] of cases)
+        assert.equal(sessionPaceColor(deviation), expected, `session deviation ${deviation}`);
+});
+
+test('session start with full remaining quota is healthy', () => {
+    const resetAt = localTimestamp(2026, 8, 27, 14, 31, 0);
+    const start = localTimestamp(2026, 8, 27, 9, 31, 0);
+    const deviation = calculateSessionPace({
+        sessionPercent: 100,
+        sessionResetAt: resetAt,
+        lastUpdated: start,
+        sessionWindowMins: 300,
+    });
+
+    assert.equal(deviation, 0);
+    assert.equal(sessionPaceColor(deviation), '#15803D');
+});
+
+test('weekly health bands map consumption pace to semantic colors', () => {
+    const cases = [
+        [0.5, '#15803D'],
+        [1.0, '#15803D'],
+        [1.05, '#15803D'],
+        [1.050001, '#FACC15'],
+        [1.10, '#FACC15'],
+        [1.15, '#FACC15'],
+        [1.150001, '#EA580C'],
+        [1.28, '#EA580C'],
+        [1.30, '#EA580C'],
+        [1.300001, '#B91C1C'],
+        [2.0, '#B91C1C'],
+    ];
+
+    for (const [pace, expected] of cases)
+        assert.equal(weeklyPaceColor(pace), expected, `weekly pace ${pace}`);
 });
 
 // ---------------------------------------------------------------------------
@@ -1470,8 +1521,9 @@ test('traceElapsedFractionOfWeek exposes windowStart and rawFraction', () => {
 test('tracePaceToColor exposes selected threshold', () => {
     const t = tracePaceToColor(0.5);
     assert.equal(t.result, '#15803D');
-    assert.equal(t.trace.selectedThreshold, 0.80);
+    assert.equal(t.trace.selectedThreshold, 1.05);
     assert.equal(t.trace.selectedColor, '#15803D');
+    assert.equal(t.trace.selectedBand, 'green');
 });
 
 test('tracePaceToColor returns null for Infinity with trace', () => {
@@ -1885,7 +1937,7 @@ test('Task3 color divergence: same actual usage gives different weekly color for
     const fOld = elapsedFractionOfWeek(resetAt, lastUpdated); // 1/7 => expected 14.2857
     const paceOld = weeklyConsumptionPace({quotaRemainingPercent: 84, elapsedFraction: fOld});
     assert.ok(Math.abs(paceOld - 1.12) < 0.01, `old pace ${paceOld}`);
-    assert.equal(weeklyPaceColor(paceOld), '#EA580C', 'old should be orange');
+    assert.equal(weeklyPaceColor(paceOld), '#FACC15', 'old should be yellow');
     assert.notEqual(weeklyPaceColor(paceNew), weeklyPaceColor(paceOld));
 });
 
