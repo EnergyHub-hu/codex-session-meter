@@ -7,6 +7,22 @@ A formátum a [Keep a Changelog](https://keepachangelog.com/hu/1.1.0/) alapján 
 
 ## [Unreleased]
 
+## [v0.3.6] - 2026-09-01
+
+### Javítások
+
+- A napi pace deviation számítása az effektív helyi naptári napot követi, így a részleges napok és a nyári/téli időszámítás is pontosabban jelenik meg.
+- A napi pont a pace deviation health band alapján kap színt, miközben a Daily százalék továbbra is a fennmaradó keretet mutatja.
+
+### Refaktorálás
+
+- A napi és session pace deviation közös health-band logikát használ az extensionben és a helper debug nézetében.
+- A debug nézet részletesen megjeleníti a várt napi fennmaradó értéket, az eltérést és a kiválasztott health bandet.
+
+### Tesztek
+
+- Bővült a regressziós lefedettség a határértékekre, részleges intervallumokra, heti horizontokra és Budapest időzóna-átmeneteire.
+
 ## [v0.3.4] - 2026-08-31
 
 ### Új funkciók
