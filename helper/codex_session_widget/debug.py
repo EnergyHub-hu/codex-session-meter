@@ -662,8 +662,8 @@ def _render_session(trace: dict, width: int | None = None, use_color: bool | Non
         _emit(lines, f"Indicator level: {level.get('result', 'n/a')}", width)
         _emit(lines, f"Indicator class: codex-session-daily-limit-{level.get('result', 'n/a')}", width)
         fallback = pcolor.get('fallback', {}).get('result') if isinstance(pcolor.get('fallback'), dict) else pcolor.get('effective')
-        _emit(lines, f"Color (fallback, limitIndicatorColor): {_fmt_color(fallback)}", width)
-        _emit(lines, f"Effective dot color: {_fmt_color(pcolor.get('effective'))}", width)
+        _emit(lines, f"Remaining-level fallback color: {_fmt_color(fallback)}", width)
+        _emit(lines, f"Effective live dot color: {_fmt_color(pcolor.get('effective'))}", width)
         return "\n".join(lines)
 
     # Compact mode (A+C): short view that fits screen
@@ -768,13 +768,13 @@ def _render_session(trace: dict, width: int | None = None, use_color: bool | Non
             marker = " ← selected" if band.get("band") == pcolor_trace.get("selectedBand") else ""
             _emit(lines, f"  deviation ≥ {minimum_text} pp → {band.get('band', 'n/a').upper()}  {band.get('color', 'n/a')}{marker}", width, subsequent_indent="    ")
         _emit(lines, f"Selected health band: {pcolor_trace.get('selectedBand', 'n/a')}", width)
-        _emit(lines, f"Selected color: {_fmt_color(pcolor.get('result'))}", width)
-        _emit(lines, f"Fallback (limitIndicatorColor): {_fmt_color(fallback.get('result') if isinstance(fallback, dict) else 'n/a')}", width)
-        _emit(lines, f"Effective dot color: {_fmt_color(pcolor.get('effective'))}", width)
+        _emit(lines, f"Selected pace-health color: {_fmt_color(pcolor.get('result'))}", width)
+        _emit(lines, f"Remaining-level fallback color: {_fmt_color(fallback.get('result') if isinstance(fallback, dict) else 'n/a')}", width)
+        _emit(lines, f"Effective live dot color: {_fmt_color(pcolor.get('effective'))}", width)
     else:
         _emit(lines, "Pace: n/a (null)", width)
-        _emit(lines, f"Fallback color (limitIndicatorColor): {_fmt_color(fallback.get('result') if isinstance(fallback, dict) else _fmt_color(pcolor.get('effective')))}", width)
-        _emit(lines, f"Effective dot color: {_fmt_color(pcolor.get('effective'))}", width)
+        _emit(lines, f"Remaining-level fallback color: {_fmt_color(fallback.get('result') if isinstance(fallback, dict) else _fmt_color(pcolor.get('effective')))}", width)
+        _emit(lines, f"Effective live dot color: {_fmt_color(pcolor.get('effective'))}", width)
     _emit(lines, f"Indicator remaining: {_fmt_percent(session_percent, 2)}", width)
     _emit(lines, f"Indicator class: codex-session-daily-limit-{level.get('result', 'n/a')}", width)
     if level.get("trace"):
@@ -850,7 +850,7 @@ def _render_daily(trace: dict, width: int | None = None, use_color: bool | None 
         lines.append(_hr(min(52, width), "─", use_color=use_color))
         _emit(lines, "A Daily pont pace-deviation health színt kap; a Daily % továbbra is remaining.", width)
         _emit(lines, f"Indicator level: {level.get('result', 'n/a')}", width)
-        _emit(lines, f"Effective color: {_fmt_color(pcolor.get('effective'))}", width)
+        _emit(lines, f"Effective live dot color: {_fmt_color(pcolor.get('effective'))}", width)
         return "\n".join(lines)
 
     if compact:
@@ -959,7 +959,6 @@ def _render_daily(trace: dict, width: int | None = None, use_color: bool | None 
             _emit(lines, f"elapsedCalendarDayUnits = localCalendarDayUnitsBetween(weeklyStart, cappedEnd) = {_fmt_number(wt.get('elapsedCalendarDayUnits'), 6)}", width, subsequent_indent="  ")
         _emit(lines, f"elapsedFraction = elapsedCalendarDayUnits / workdays = {_fmt_number(wt.get('elapsedCalendarDayUnits'), 6) if wt.get('elapsedCalendarDayUnits') is not None else 'n/a'} / {workdays} = {_fmt_number(wt.get('elapsedFraction'), 6)}", width, subsequent_indent="  ")
         _emit(lines, f"elapsedWorkdays = elapsedCalendarDayUnits = {_fmt_number(wt.get('elapsedWorkdays'), 4)}", width, subsequent_indent="  ")
-        _emit(lines, f"todayMinimumRemainingPercent = max(0, 100 − elapsedWorkdays×fullDayBudget) = {_fmt_number(wt.get('todayMinimumRemainingPercent'), 4)} %", width, subsequent_indent="  ")
 
     lines.append("")
     lines.append(_c("PACE SZÁMÍTÁS — Daily pace deviation", ANSI_BOLD, use_color=use_color))
@@ -994,10 +993,10 @@ def _render_daily(trace: dict, width: int | None = None, use_color: bool | None 
         marker = " ← selected" if band.get("band") == pct.get("selectedBand") else ""
         _emit(lines, f"  deviation ≥ {minimum_text} pp → {band.get('band', 'n/a').upper()}  {band.get('color', 'n/a')}{marker}", width, subsequent_indent="    ")
     _emit(lines, f"Selected health band: {pct.get('selectedBand', 'n/a')}", width)
-    _emit(lines, f"Selected color: {_fmt_color(pcolor.get('result'))}", width)
+    _emit(lines, f"Selected pace-health color: {_fmt_color(pcolor.get('result'))}", width)
     fallback = pcolor.get("fallback") if isinstance(pcolor.get("fallback"), dict) else {}
-    _emit(lines, f"Fallback (limitIndicatorColor): {_fmt_color(fallback.get('result') if isinstance(fallback, dict) else 'n/a')}", width)
-    _emit(lines, f"Effective dot color: {_fmt_color(pcolor.get('effective'))}", width)
+    _emit(lines, f"Remaining-level fallback color: {_fmt_color(fallback.get('result') if isinstance(fallback, dict) else 'n/a')}", width)
+    _emit(lines, f"Effective live dot color: {_fmt_color(pcolor.get('effective'))}", width)
     _emit(lines, f"Indicator remaining: {_fmt_percent(daily_remaining, 2) if daily_remaining is not None else 'n/a'}", width)
     _emit(lines, f"Indicator class: codex-session-daily-limit-{level.get('result', 'n/a')}", width)
 
@@ -1210,13 +1209,14 @@ def _render_weekly(trace: dict, width: int | None = None, use_color: bool | None
     fallback = pcolor.get("fallback") if isinstance(pcolor.get("fallback"), dict) else {}
     if pace.get("result") is None:
         _emit(lines, "Pace: n/a", width)
-        _emit(lines, f"Fallback (limitIndicatorColor): {_fmt_color(fallback.get('result') if isinstance(fallback, dict) else pcolor.get('effective'))}", width)
+        _emit(lines, f"Remaining-level fallback color: {_fmt_color(fallback.get('result') if isinstance(fallback, dict) else pcolor.get('effective'))}", width)
+        _emit(lines, f"Effective live dot color: {_fmt_color(pcolor.get('effective'))}", width)
     else:
         if isinstance(pace.get("result"), float) and math.isinf(pace.get("result")):
             _emit(lines, "Pace input: ∞", width)
             _emit(lines, "paceToColor(∞) → null (nem véges) → fallback szín érvényesül", width)
-            _emit(lines, f"Fallback (limitIndicatorColor): {_fmt_color(fallback.get('result') if isinstance(fallback, dict) else 'n/a')}", width)
-            _emit(lines, f"Effective dot color: {_fmt_color(pcolor.get('effective'))}", width)
+            _emit(lines, f"Remaining-level fallback color: {_fmt_color(fallback.get('result') if isinstance(fallback, dict) else 'n/a')}", width)
+            _emit(lines, f"Effective live dot color: {_fmt_color(pcolor.get('effective'))}", width)
         else:
             _emit(lines, f"Pace input: {_fmt_number(pace.get('result'),6)}", width)
             if pct.get("selectedThreshold") is not None:
@@ -1235,9 +1235,9 @@ def _render_weekly(trace: dict, width: int | None = None, use_color: bool | None
                     _emit(lines, f"  {dot} pace ≤ {thr_str}×  → {b_col}  {b_label}{marker}", width, subsequent_indent="    ")
                 _emit(lines, f"Selected health band: {pct.get('selectedBand', 'n/a')}", width)
                 _emit(lines, f"Selected band küszöb: {thr if not math.isinf(thr) else '∞'}", width)
-            _emit(lines, f"Selected color: {_fmt_color(pcolor.get('result'))}", width)
-            _emit(lines, f"Fallback (limitIndicatorColor): {_fmt_color(fallback.get('result') if isinstance(fallback, dict) else 'n/a')}", width)
-            _emit(lines, f"Effective dot color: {_fmt_color(pcolor.get('effective'))}", width)
+            _emit(lines, f"Selected pace-health color: {_fmt_color(pcolor.get('result'))}", width)
+            _emit(lines, f"Remaining-level fallback color: {_fmt_color(fallback.get('result') if isinstance(fallback, dict) else 'n/a')}", width)
+            _emit(lines, f"Effective live dot color: {_fmt_color(pcolor.get('effective'))}", width)
     _emit(lines, f"Indicator remaining: {_fmt_percent(weekly_percent,2) if weekly_percent is not None else 'n/a'}", width)
     _emit(lines, f"Indicator class: codex-session-daily-limit-{level.get('result', 'n/a')}", width)
 

@@ -604,8 +604,55 @@ def test_daily_pace_golden_trace_and_debug_output():
     assert "rawDailyPaceDeviation" in screen
     assert "COLOR / DISPLAY — Daily pace health" in screen
     assert "Selected health band: green" in screen
-    assert "Selected color: #15803D" in screen
+    assert "Selected pace-health color: #15803D" in screen
+    assert "Remaining-level fallback color: #9CE437" in screen
+    assert "Effective live dot color: #15803D" in screen
+    assert "todayMinimumRemainingPercent = max(" not in screen
     assert "PACE_COLOR_STOPS" not in screen
+
+
+def test_daily_debug_output_distinguishes_remaining_and_pace_health():
+    from codex_session_widget.debug import get_trace, render_screen
+
+    if datetime.fromisoformat("2026-09-01T12:00:00").astimezone().utcoffset().total_seconds() != 2 * 60 * 60:
+        pytest.skip("semantic example requires Europe/Budapest summer time")
+
+    payload = _sample_payload({
+        "weekly_percent": 75,
+        "weekly_reset_at": "2026-09-07T08:03:33+02:00",
+        "last_updated": "2026-09-01T16:23:51+02:00",
+        "settings": {"weekly_workdays": 5},
+    })
+    trace = get_trace(payload)
+    daily = trace["daily"]
+    deviation_trace = daily["paceDeviation"]["trace"]
+
+    _assert_close(daily["remaining"]["result"], 41.4201388888889, 1e-9)
+    _assert_close(deviation_trace["expectedDailyRemainingPercent"], 31.677083333333332, 1e-9)
+    _assert_close(deviation_trace["rawDailyPaceDeviation"], 9.743055555555568, 1e-9)
+    assert daily["color"]["trace"]["selectedBand"] == "green"
+    assert daily["color"]["result"] == "#15803D"
+    assert daily["color"]["fallback"]["result"] == "#F5A412"
+    assert daily["color"]["effective"] == "#15803D"
+
+    screen = render_screen(
+        payload,
+        trace,
+        datetime.fromisoformat(payload["last_updated"]),
+        "test",
+        datetime.fromisoformat(payload["last_updated"]),
+        width=200,
+        use_color=False,
+    )
+    assert "Eredmény (dailyRemainingPercent): 41.4201 %" in screen
+    assert "= (1 − 0.683229) × 100 = 31.6771 %" in screen
+    assert "Final dailyPaceDeviation: +9.74 pp" in screen
+    assert "Selected health band: green" in screen
+    assert "Selected pace-health color: #15803D" in screen
+    assert "Remaining-level fallback color: #F5A412" in screen
+    assert "Effective live dot color: #15803D" in screen
+    assert "Selected pace-health color: #F5A412" not in screen
+    assert "todayMinimumRemainingPercent = max(" not in screen
 
 
 def test_production_debug_equivalence_weekly():
