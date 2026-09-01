@@ -301,6 +301,11 @@ def _fmt_number(v: Any, decimals: int = 4) -> str:
         return str(v)
     return f"{v:.{decimals}f}"
 
+def _fmt_signed_number(v: Any, decimals: int = 4) -> str:
+    if v is None or not isinstance(v, (int, float)) or (isinstance(v, float) and (math.isnan(v) or math.isinf(v))):
+        return _fmt_number(v, decimals)
+    return f"{v:+.{decimals}f}"
+
 
 def _fmt_pace(v: Any, decimals: int = 6) -> str:
     """Format pace value for debug rendering.
@@ -757,16 +762,11 @@ def _render_session(trace: dict, width: int | None = None, use_color: bool | Non
     if pace.get("result") is not None:
         _emit(lines, f"paceDeviation input: {_fmt_number(pace.get('result'), 2)} pp", width)
         _emit(lines, "Discrete health bands (not a symmetric color gradient):", width)
-        session_bands = [
-            (-5, "#15803D", "GREEN / healthy"),
-            (-15, "#FACC15", "YELLOW / watch usage"),
-            (-30, "#EA580C", "ORANGE / materially over-consuming"),
-            (float("-inf"), "#B91C1C", "RED / critical risk"),
-        ]
-        for minimum, color, label in session_bands:
-            minimum_text = "−∞" if math.isinf(minimum) else f"{minimum}"
-            marker = " ← selected" if color == pcolor_trace.get("selectedColor") else ""
-            _emit(lines, f"  deviation ≥ {minimum_text} pp → {color}  {label}{marker}", width, subsequent_indent="    ")
+        for band in pcolor_trace.get("healthBands", []):
+            minimum = band.get("min")
+            minimum_text = "−∞" if isinstance(minimum, (int, float)) and math.isinf(minimum) else _fmt_number(minimum, 0)
+            marker = " ← selected" if band.get("band") == pcolor_trace.get("selectedBand") else ""
+            _emit(lines, f"  deviation ≥ {minimum_text} pp → {band.get('band', 'n/a').upper()}  {band.get('color', 'n/a')}{marker}", width, subsequent_indent="    ")
         _emit(lines, f"Selected health band: {pcolor_trace.get('selectedBand', 'n/a')}", width)
         _emit(lines, f"Selected color: {_fmt_color(pcolor.get('result'))}", width)
         _emit(lines, f"Fallback (limitIndicatorColor): {_fmt_color(fallback.get('result') if isinstance(fallback, dict) else 'n/a')}", width)
@@ -793,10 +793,9 @@ def _render_daily(trace: dict, width: int | None = None, use_color: bool | None 
     inp = d.get("input", {})
     wpr = d.get("weeklyPaceResult", {})
     wpr_trace = wpr.get("trace") or {}
-    # Task4: daily color is derived from remaining, not pace. Support both new "color" and legacy "paceColor".
+    # Daily color is derived from the traced pace deviation; keep old trace keys readable.
     color_data = d.get("color") if d.get("color") is not None else d.get("paceColor", {})
-    # legacy pace may still exist for backward compat, but new trace uses color
-    pace = d.get("pace", {}) or {}
+    pace = d.get("paceDeviation", {}) or d.get("pace", {}) or {}
     pcolor = color_data
     level = d.get("indicatorLevel", {})
 
@@ -847,10 +846,9 @@ def _render_daily(trace: dict, width: int | None = None, use_color: bool | None 
         _emit(lines, "Napi keret nem számítható (hiányzó bemenet).", width)
         _emit(lines, f"  isQuotaFinite={wt.get('isQuotaFinite')}, isResetFinite={wt.get('isResetFinite')}, isLastUpdatedFinite={wt.get('isLastUpdatedFinite')}", width)
         lines.append("")
-        lines.append(_c("COLOR / DISPLAY — napi remaining színe", ANSI_BOLD, use_color=use_color))
+        lines.append(_c("COLOR / DISPLAY — Daily pace health", ANSI_BOLD, use_color=use_color))
         lines.append(_hr(min(52, width), "─", use_color=use_color))
-        _emit(lines, "A napi pont ugyanazt az EOD-normalizált értéket reprezentálja,", width)
-        _emit(lines, "mint a Daily százalék.", width)
+        _emit(lines, "A Daily pont pace-deviation health színt kap; a Daily % továbbra is remaining.", width)
         _emit(lines, f"Indicator level: {level.get('result', 'n/a')}", width)
         _emit(lines, f"Effective color: {_fmt_color(pcolor.get('effective'))}", width)
         return "\n".join(lines)
@@ -964,35 +962,42 @@ def _render_daily(trace: dict, width: int | None = None, use_color: bool | None 
         _emit(lines, f"todayMinimumRemainingPercent = max(0, 100 − elapsedWorkdays×fullDayBudget) = {_fmt_number(wt.get('todayMinimumRemainingPercent'), 4)} %", width, subsequent_indent="  ")
 
     lines.append("")
-    lines.append(_c("COLOR / DISPLAY — napi remaining színe", ANSI_BOLD, use_color=use_color))
+    lines.append(_c("PACE SZÁMÍTÁS — Daily pace deviation", ANSI_BOLD, use_color=use_color))
     lines.append(_hr(min(52, width), "─", use_color=use_color))
-    _emit(lines, "A napi pont ugyanazt az EOD-normalizált értéket reprezentálja,", width)
-    _emit(lines, "mint a Daily százalék.", width)
-    lines.append("")
-    if daily_remaining is None or not isinstance(daily_remaining, (int, float)) or (isinstance(daily_remaining, float) and (math.isnan(daily_remaining) or math.isinf(daily_remaining))):
-        _emit(lines, "Color input: n/a", width)
-        fallback = pcolor.get("fallback") if isinstance(pcolor.get("fallback"), dict) else {}
-        fb_color = fallback.get("result") if isinstance(fallback, dict) else pcolor.get("effective")
-        _emit(lines, f"Fallback (limitIndicatorColor): {_fmt_color(fb_color)}", width)
-        _emit(lines, f"Effective dot color: {_fmt_color(pcolor.get('effective'))}", width)
+    deviation_trace = pace.get("trace") or {}
+    if pace.get("result") is None:
+        _emit(lines, "Daily pace deviation: n/a (hiányzó vagy érvénytelen bemenet)", width)
     else:
-        _emit(lines, f"Color input: {_fmt_number(daily_remaining, 4)} %", width)
-        lines.append("")
-        _emit(lines, "Normalizáció:", width)
-        pct = pcolor.get("trace") or {}
-        norm_trace = pct.get("normalizeTrace") or {}
-        clamped = norm_trace.get("clamped")
-        _emit(lines, f"  clamp [-100, 200] → {_fmt_number(clamped, 4) if isinstance(clamped, (int, float)) else 'n/a'}", width, subsequent_indent="    ")
-        _emit(lines, f"  normalized = (clamped − min)/(max−min)×100 = {_fmt_number(pct.get('normalized'), 4)} %", width, subsequent_indent="    ")
-        if pct.get("selectedIndex") is not None:
-            _emit(lines, f"  PACE_COLOR_STOPS intervallum: index {pct.get('selectedIndex')}  [{pct.get('lowerPercent')}%, {pct.get('upperPercent')}%]", width, subsequent_indent="    ")
-            _emit(lines, f"  Alsó szín: {_fmt_color(pct.get('lowerColor'))}  Felső szín: {_fmt_color(pct.get('upperColor'))}", width, subsequent_indent="    ")
-            _emit(lines, f"  ratio = (norm − lower)/(upper−lower) = {_fmt_number(pct.get('ratio'), 6)}", width, subsequent_indent="    ")
-            _emit(lines, f"  Interpolált RGB: {pct.get('interpolatedRgb')}", width, subsequent_indent="    ")
-        _emit(lines, f"Selected / interpolated: {_fmt_color(pcolor.get('result'))}", width)
-        fallback = pcolor.get("fallback") if isinstance(pcolor.get("fallback"), dict) else {}
-        _emit(lines, f"Fallback (limitIndicatorColor): {_fmt_color(fallback.get('result') if isinstance(fallback, dict) else 'n/a')}", width)
-        _emit(lines, f"Effective dot color: {_fmt_color(pcolor.get('effective'))}", width)
+        _emit(lines, f"Effective day start: {_fmt_millis(deviation_trace.get('effectiveDayStart'))}", width)
+        _emit(lines, f"Effective day end:   {_fmt_millis(deviation_trace.get('effectiveDayEnd'))}", width)
+        _emit(lines, f"todayDayUnits: {_fmt_number(deviation_trace.get('todayDayUnits'), 6)}", width)
+        _emit(lines, f"cappedNow: {_fmt_millis(deviation_trace.get('cappedNow'))}", width)
+        _emit(lines, f"elapsedTodayDayUnits: {_fmt_number(deviation_trace.get('elapsedTodayDayUnits'), 6)}", width)
+        _emit(lines, f"elapsedTodayFraction: {_fmt_number(deviation_trace.get('elapsedTodayFraction'), 6)} = {_fmt_number(deviation_trace.get('elapsedTodayFraction') * 100 if isinstance(deviation_trace.get('elapsedTodayFraction'), (int, float)) else None, 4)} %", width)
+        _emit(lines, "expectedDailyRemainingPercent = (1 − elapsedTodayFraction) × 100", width)
+        _emit(lines, f"  = (1 − {_fmt_number(deviation_trace.get('elapsedTodayFraction'), 6)}) × 100 = {_fmt_number(deviation_trace.get('expectedDailyRemainingPercent'), 4)} %", width, subsequent_indent="    ")
+        _emit(lines, f"Actual Daily remaining: {_fmt_number(deviation_trace.get('dailyRemainingPercent'), 4)} %", width)
+        _emit(lines, "rawDailyPaceDeviation = dailyRemainingPercent − expectedDailyRemainingPercent", width)
+        _emit(lines, f"  = {_fmt_number(deviation_trace.get('dailyRemainingPercent'), 4)} − {_fmt_number(deviation_trace.get('expectedDailyRemainingPercent'), 4)} = {_fmt_signed_number(deviation_trace.get('rawDailyPaceDeviation'), 4)} pp", width, subsequent_indent="    ")
+        _emit(lines, f"Clamp [−100, +100] → {_fmt_signed_number(deviation_trace.get('dailyPaceDeviation'), 4)} pp", width)
+        _emit(lines, f"Final dailyPaceDeviation: {_fmt_signed_number(pace.get('result'), 2)} pp", width)
+
+    lines.append("")
+    lines.append(_c("COLOR / DISPLAY — Daily pace health", ANSI_BOLD, use_color=use_color))
+    lines.append(_hr(min(52, width), "─", use_color=use_color))
+    _emit(lines, f"dailyPaceDeviation input: {_fmt_signed_number(pace.get('result'), 2)} pp", width)
+    _emit(lines, "Discrete health bands:", width)
+    pct = pcolor.get("trace") or {}
+    for band in pct.get("healthBands", []):
+        minimum = band.get("min")
+        minimum_text = "−∞" if isinstance(minimum, (int, float)) and math.isinf(minimum) else _fmt_number(minimum, 0)
+        marker = " ← selected" if band.get("band") == pct.get("selectedBand") else ""
+        _emit(lines, f"  deviation ≥ {minimum_text} pp → {band.get('band', 'n/a').upper()}  {band.get('color', 'n/a')}{marker}", width, subsequent_indent="    ")
+    _emit(lines, f"Selected health band: {pct.get('selectedBand', 'n/a')}", width)
+    _emit(lines, f"Selected color: {_fmt_color(pcolor.get('result'))}", width)
+    fallback = pcolor.get("fallback") if isinstance(pcolor.get("fallback"), dict) else {}
+    _emit(lines, f"Fallback (limitIndicatorColor): {_fmt_color(fallback.get('result') if isinstance(fallback, dict) else 'n/a')}", width)
+    _emit(lines, f"Effective dot color: {_fmt_color(pcolor.get('effective'))}", width)
     _emit(lines, f"Indicator remaining: {_fmt_percent(daily_remaining, 2) if daily_remaining is not None else 'n/a'}", width)
     _emit(lines, f"Indicator class: codex-session-daily-limit-{level.get('result', 'n/a')}", width)
 
@@ -1253,9 +1258,7 @@ def _render_summary(trace: dict, width: int | None = None, use_color: bool | Non
     s_color = s.get("paceColor", {}).get("effective")
 
     d_rem = d.get("remaining", {}).get("result")
-    # Task4: daily pace no longer exists; color from remaining
-    d_pace = d.get("pace", {}).get("result") if d.get("pace") else None
-    # Prefer new "color" key, fallback to legacy "paceColor"
+    d_pace = d.get("paceDeviation", {}).get("result") if d.get("paceDeviation") else (d.get("pace", {}).get("result") if d.get("pace") else None)
     _d_color_src = d.get("color") if d.get("color") is not None else d.get("paceColor", {})
     d_color = _d_color_src.get("effective") if isinstance(_d_color_src, dict) else None
 
@@ -1289,6 +1292,15 @@ def _render_summary(trace: dict, width: int | None = None, use_color: bool | Non
             return "∞"
         return f"{v:+.2f}"
 
+    def fmt_deviation(v: Any) -> str:
+        if v is None:
+            return "n/a"
+        if isinstance(v, float) and math.isinf(v):
+            return "∞" if v > 0 else "-∞"
+        if isinstance(v, float) and math.isnan(v):
+            return "NaN"
+        return f"{v:+.2f}"
+
     lines: list[str] = []
     lines.append(_c("ÖSSZEFOGLALÓ", ANSI_BOLD, ANSI_WHITE, use_color=use_color))
     lines.append(_c("═" * min(12, width), ANSI_DIM, use_color=use_color))
@@ -1306,7 +1318,7 @@ def _render_summary(trace: dict, width: int | None = None, use_color: bool | Non
 
     lines.append(f"{'5 órás session':<22} {fmt_rem(s_rem):<14} {fmt_pace_session(s_pace):<14} {s_color or 'n/a'}")
     d_rem_str = fmt_rem(d_rem) if d_rem is not None else "n/a"
-    lines.append(f"{'Napi keret':<22} {d_rem_str:<14} {fmt_pace(d_pace):<14} {d_color or 'n/a'}")
+    lines.append(f"{'Napi keret':<22} {d_rem_str:<14} {fmt_deviation(d_pace):<14} {d_color or 'n/a'}")
     lines.append(f"{'Heti keret':<22} {fmt_rem(w_rem):<14} {fmt_pace(w_pace):<14} {w_color or 'n/a'}")
     lines.append("")
     w_reset = w.get("input", {}).get("weeklyResetAt") or ""

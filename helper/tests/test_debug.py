@@ -115,7 +115,8 @@ def test_render_screen_shows_formulas_and_intermediates():
     # session elapsed
     assert "elapsed" in screen.lower()
     assert "Session kezdete" in screen
-    assert "PACE_COLOR_STOPS" in screen or "normalized" in screen.lower()
+    assert "Daily pace deviation" in screen
+    assert "expectedDailyRemainingPercent" in screen
     # daily EOD
     assert "allowedByEOD" in screen
     assert "dailyRemainingPercent" in screen
@@ -551,7 +552,7 @@ def test_production_debug_equivalence_session():
 
 
 def test_production_debug_equivalence_daily():
-    """Daily remaining/color from trace (Task4: no daily pace)."""
+    """Daily remaining and pace-health color come from the shared JS trace."""
     from codex_session_widget.debug import get_trace
     payload = _sample_payload({
         "weekly_percent": 60,
@@ -559,12 +560,52 @@ def test_production_debug_equivalence_daily():
         "last_updated": "2026-07-16T12:00:00+02:00",
     })
     trace = get_trace(payload)
-    # Task4: daily is EOD-normalized remaining + color from remaining, not pace
     assert trace["daily"]["remaining"]["result"] is not None
+    assert trace["daily"]["paceDeviation"]["result"] is not None
     assert trace["daily"]["color"]["result"] is not None
     assert trace["daily"]["color"]["effective"] is not None
     # Weekly still has pace
     assert isinstance(trace["weekly"]["pace"]["result"], float)
+
+
+def test_daily_pace_golden_trace_and_debug_output():
+    from codex_session_widget.debug import get_trace, render_screen
+
+    if datetime.fromisoformat("2026-09-01T12:00:00").astimezone().utcoffset().total_seconds() != 2 * 60 * 60:
+        pytest.skip("golden reference requires Europe/Budapest summer time")
+
+    payload = _sample_payload({
+        "weekly_percent": 82,
+        "weekly_reset_at": "2026-09-07T08:03:33+02:00",
+        "last_updated": "2026-09-01T15:31:15+02:00",
+        "settings": {"weekly_workdays": 5},
+    })
+    trace = get_trace(payload)
+    daily = trace["daily"]
+    pace_trace = daily["paceDeviation"]["trace"]
+
+    _assert_close(daily["remaining"]["result"], 76.4201388888889, 1e-9)
+    _assert_close(pace_trace["expectedDailyRemainingPercent"], 35.329861111111114, 1e-9)
+    _assert_close(pace_trace["rawDailyPaceDeviation"], 41.090277777777786, 1e-9)
+    assert daily["paceDeviation"]["result"] == pace_trace["dailyPaceDeviation"]
+    assert daily["color"]["trace"]["selectedBand"] == "green"
+    assert daily["color"]["result"] == "#15803D"
+
+    screen = render_screen(
+        payload,
+        trace,
+        datetime.fromisoformat(payload["last_updated"]),
+        "test",
+        datetime.fromisoformat(payload["last_updated"]),
+        width=200,
+        use_color=False,
+    )
+    assert "PACE SZÁMÍTÁS — Daily pace deviation" in screen
+    assert "rawDailyPaceDeviation" in screen
+    assert "COLOR / DISPLAY — Daily pace health" in screen
+    assert "Selected health band: green" in screen
+    assert "Selected color: #15803D" in screen
+    assert "PACE_COLOR_STOPS" not in screen
 
 
 def test_production_debug_equivalence_weekly():

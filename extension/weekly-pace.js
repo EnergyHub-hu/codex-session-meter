@@ -310,27 +310,28 @@ export function traceDailyPaceColor(pace) {
 // ---------------------------------------------------------------------------
 // sessionPaceColor — shared internal
 // ---------------------------------------------------------------------------
-const SESSION_PACE_HEALTH_BANDS = [
+const PACE_DEVIATION_HEALTH_BANDS = [
     {min: -5, band: 'green', color: '#15803D'},
     {min: -15, band: 'yellow', color: '#FACC15'},
     {min: -30, band: 'orange', color: '#EA580C'},
     {min: -Infinity, band: 'red', color: '#B91C1C'},
 ];
 
-function _sessionPaceColorInternal(pace) {
+function _paceDeviationHealthColorInternal(deviation) {
     const trace = {
-        pace,
-        isFinite: Number.isFinite(pace),
+        deviation,
+        isFinite: Number.isFinite(deviation),
+        healthBands: PACE_DEVIATION_HEALTH_BANDS.map(({min, band, color}) => ({min, band, color})),
         selectedBand: null,
         selectedThreshold: null,
         selectedColor: null,
         result: null,
     };
-    if (!Number.isFinite(pace))
+    if (!Number.isFinite(deviation))
         return {result: null, trace};
 
-    for (const {min, band, color} of SESSION_PACE_HEALTH_BANDS) {
-        if (pace < min)
+    for (const {min, band, color} of PACE_DEVIATION_HEALTH_BANDS) {
+        if (deviation < min)
             continue;
         trace.selectedBand = band;
         trace.selectedThreshold = min;
@@ -342,12 +343,29 @@ function _sessionPaceColorInternal(pace) {
     return {result: null, trace};
 }
 
+function _sessionPaceColorInternal(pace) {
+    const result = _paceDeviationHealthColorInternal(pace);
+    result.trace.pace = pace;
+    return result;
+}
+
 export function sessionPaceColor(pace) {
     return _sessionPaceColorInternal(pace).result;
 }
 
 export function traceSessionPaceColor(pace) {
     return _sessionPaceColorInternal(pace);
+}
+
+// ---------------------------------------------------------------------------
+// dailyPaceDeviationColor — shared pace-deviation health bands
+// ---------------------------------------------------------------------------
+export function dailyPaceDeviationColor(deviation) {
+    return _paceDeviationHealthColorInternal(deviation).result;
+}
+
+export function traceDailyPaceDeviationColor(deviation) {
+    return _paceDeviationHealthColorInternal(deviation);
 }
 
 // ---------------------------------------------------------------------------
@@ -683,6 +701,67 @@ export function traceCalculateSessionPace({sessionPercent, sessionResetAt, lastU
     return _calculateSessionPaceInternal({sessionPercent, sessionResetAt, lastUpdated, sessionWindowMins});
 }
 
+// ---------------------------------------------------------------------------
+// daily pace deviation — effective local calendar day
+// ---------------------------------------------------------------------------
+function _dailyPaceDeviationInternal({
+    dailyRemainingPercent,
+    weeklyStartMillis,
+    consumptionHorizonMillis,
+    effectiveDayStart,
+    effectiveDayEnd,
+    todayDayUnits,
+    lastUpdatedMillis,
+}) {
+    const trace = {
+        dailyRemainingPercent,
+        weeklyStartMillis,
+        consumptionHorizonMillis,
+        effectiveDayStart,
+        effectiveDayEnd,
+        todayDayUnits,
+        lastUpdatedMillis,
+        cappedNow: null,
+        elapsedTodayDayUnits: null,
+        elapsedTodayFraction: null,
+        expectedDailyRemainingPercent: null,
+        rawDailyPaceDeviation: null,
+        dailyPaceDeviation: null,
+        result: null,
+    };
+    if (!Number.isFinite(dailyRemainingPercent) ||
+        !Number.isFinite(weeklyStartMillis) ||
+        !Number.isFinite(consumptionHorizonMillis) ||
+        !Number.isFinite(lastUpdatedMillis))
+        return {result: null, trace};
+
+    const clampNow = value => Math.max(effectiveDayStart, Math.min(effectiveDayEnd, value));
+    trace.cappedNow = clampNow(lastUpdatedMillis);
+
+    if (lastUpdatedMillis <= weeklyStartMillis) {
+        trace.elapsedTodayDayUnits = 0;
+        trace.elapsedTodayFraction = 0;
+        trace.expectedDailyRemainingPercent = 100;
+    } else if (lastUpdatedMillis >= consumptionHorizonMillis) {
+        trace.elapsedTodayDayUnits = Number.isFinite(todayDayUnits) ? todayDayUnits : 0;
+        trace.elapsedTodayFraction = todayDayUnits > 0 ? 1 : 0;
+        trace.expectedDailyRemainingPercent = 0;
+    } else if (Number.isFinite(todayDayUnits) && todayDayUnits > 0) {
+        trace.elapsedTodayDayUnits = localCalendarDayUnitsBetween(effectiveDayStart, trace.cappedNow);
+        trace.elapsedTodayFraction = Math.max(0, Math.min(1, trace.elapsedTodayDayUnits / todayDayUnits));
+        trace.expectedDailyRemainingPercent = (1 - trace.elapsedTodayFraction) * 100;
+    } else {
+        trace.elapsedTodayDayUnits = 0;
+        trace.elapsedTodayFraction = 0;
+        trace.expectedDailyRemainingPercent = 0;
+    }
+
+    trace.rawDailyPaceDeviation = dailyRemainingPercent - trace.expectedDailyRemainingPercent;
+    trace.dailyPaceDeviation = Math.max(-100, Math.min(100, trace.rawDailyPaceDeviation));
+    trace.result = trace.dailyPaceDeviation;
+    return {result: trace.result, trace};
+}
+
 function hexToRgb(hex) {
     return [1, 3, 5].map(index => Number.parseInt(hex.slice(index, index + 2), 16));
 }
@@ -739,6 +818,8 @@ function _calculateWeeklyPaceInternal({quotaRemainingPercent, resetAt, lastUpdat
         available: null,
         divisor: null,
         dailyRemainingPercent: null,
+        dailyPaceDeviation: null,
+        expectedDailyRemainingPercent: null,
         elapsedMillis: null,
         elapsedFraction: null,
         elapsedWorkdays: null,
@@ -755,6 +836,8 @@ function _calculateWeeklyPaceInternal({quotaRemainingPercent, resetAt, lastUpdat
             quotaRemainingPercent: null,
             todayMinimumRemainingPercent: null,
             dailyRemainingPercent: null,
+            dailyPaceDeviation: null,
+            expectedDailyRemainingPercent: null,
             elapsedWorkdays: null,
             workdays,
             budgetPerWorkday: null,
@@ -792,6 +875,23 @@ function _calculateWeeklyPaceInternal({quotaRemainingPercent, resetAt, lastUpdat
     trace.divisor = trace.todayBudget > 0 ? trace.todayBudget : trace.fullDayBudget;
     trace.dailyRemainingPercent = trace.available / trace.divisor * 100;
 
+    const dailyPaceDeviationTrace = _dailyPaceDeviationInternal({
+        dailyRemainingPercent: trace.dailyRemainingPercent,
+        weeklyStartMillis: trace.weeklyStartMillis,
+        consumptionHorizonMillis: trace.consumptionHorizonMillis,
+        effectiveDayStart: trace.effectiveDayStart,
+        effectiveDayEnd: trace.effectiveDayEnd,
+        todayDayUnits: trace.todayDayUnits,
+        lastUpdatedMillis: trace.lastUpdatedMillis,
+    });
+    trace.dailyPaceDeviationTrace = dailyPaceDeviationTrace.trace;
+    trace.rawDailyPaceDeviation = dailyPaceDeviationTrace.trace.rawDailyPaceDeviation;
+    trace.dailyPaceDeviation = dailyPaceDeviationTrace.result;
+    trace.expectedDailyRemainingPercent = dailyPaceDeviationTrace.trace.expectedDailyRemainingPercent;
+    trace.cappedNow = dailyPaceDeviationTrace.trace.cappedNow;
+    trace.elapsedTodayDayUnits = dailyPaceDeviationTrace.trace.elapsedTodayDayUnits;
+    trace.elapsedTodayFraction = dailyPaceDeviationTrace.trace.elapsedTodayFraction;
+
     trace.cappedEndMillis = Math.min(Math.max(trace.lastUpdatedMillis, trace.weeklyStartMillis), trace.consumptionHorizonMillis);
     trace.elapsedCalendarDayUnits = localCalendarDayUnitsBetween(trace.weeklyStartMillis, trace.cappedEndMillis) ?? 0;
     trace.elapsedMillis = Math.max(0, trace.lastUpdatedMillis - trace.weeklyStartMillis);
@@ -803,6 +903,8 @@ function _calculateWeeklyPaceInternal({quotaRemainingPercent, resetAt, lastUpdat
         quotaRemainingPercent: trace.boundedQuotaRemainingPercent,
         todayMinimumRemainingPercent: trace.todayMinimumRemainingPercent,
         dailyRemainingPercent: trace.dailyRemainingPercent,
+        dailyPaceDeviation: trace.dailyPaceDeviation,
+        expectedDailyRemainingPercent: trace.expectedDailyRemainingPercent,
         elapsedWorkdays: trace.elapsedWorkdays,
         workdays,
         budgetPerWorkday: trace.fullDayBudget,

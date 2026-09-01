@@ -10,10 +10,10 @@ import {
     traceWeeklyConsumptionPace,
     tracePaceToColor,
     traceSessionPaceColor,
+    traceDailyPaceDeviationColor,
     traceLimitIndicatorColor,
     traceDailyLimitIndicatorLevel,
     traceNormalizePace,
-    traceDailyRemainingColor,
 } from './weekly-pace.js';
 
 import fs from 'node:fs';
@@ -78,8 +78,9 @@ function buildTrace(payload) {
     });
     const paceResult = weeklyPaceTrace.result;
     const dailyRemainingPercent = paceResult?.dailyRemainingPercent ?? null;
+    const dailyPaceDeviation = paceResult?.dailyPaceDeviation ?? null;
 
-    const dailyColorTrace = traceDailyRemainingColor(dailyRemainingPercent);
+    const dailyColorTrace = traceDailyPaceDeviationColor(dailyPaceDeviation);
     const dailyFallbackColorTrace = traceLimitIndicatorColor(dailyRemainingPercent);
     const dailyEffectiveColor = dailyColorTrace.result ?? dailyFallbackColorTrace.result;
     const dailyLevelTrace = traceDailyLimitIndicatorLevel(dailyRemainingPercent);
@@ -166,6 +167,10 @@ function buildTrace(payload) {
             remaining: {
                 result: dailyRemainingPercent,
                 trace: weeklyPaceTrace.trace,
+            },
+            paceDeviation: {
+                result: dailyPaceDeviation,
+                trace: weeklyPaceTrace.trace.dailyPaceDeviationTrace,
             },
             color: {
                 result: dailyColorTrace.result,
