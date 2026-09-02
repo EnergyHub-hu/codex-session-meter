@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import stat
 from datetime import datetime, timedelta, timezone
 
@@ -87,3 +88,61 @@ def test_setup_logging_uses_private_rotating_handler(tmp_path, monkeypatch) -> N
 
     logging.getLogger().removeHandler(handlers[0])
     handlers[0].close()
+
+
+def test_private_handler_creates_initial_log_with_mode_0600(tmp_path, monkeypatch) -> None:
+    log_file = tmp_path / "widget.log"
+    creation_modes = []
+    real_open = os.open
+
+    def recording_open(path, flags, mode=0o777, *, dir_fd=None):
+        if flags & os.O_CREAT:
+            creation_modes.append(stat.S_IMODE(mode))
+        if dir_fd is None:
+            return real_open(path, flags, mode)
+        return real_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(fetcher.os, "open", recording_open)
+    previous_umask = os.umask(0o002)
+    try:
+        handler = fetcher._PrivateRotatingFileHandler(log_file, encoding="utf-8")
+        handler.close()
+    finally:
+        os.umask(previous_umask)
+
+    assert creation_modes == [0o600]
+    assert stat.S_IMODE(log_file.stat().st_mode) == 0o600
+
+
+def test_private_handler_creates_rollover_log_with_mode_0600_and_retains_backups(tmp_path, monkeypatch) -> None:
+    log_file = tmp_path / "widget.log"
+    creation_modes = []
+    real_open = os.open
+
+    def recording_open(path, flags, mode=0o777, *, dir_fd=None):
+        if flags & os.O_CREAT:
+            creation_modes.append(stat.S_IMODE(mode))
+        if dir_fd is None:
+            return real_open(path, flags, mode)
+        return real_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(fetcher.os, "open", recording_open)
+    previous_umask = os.umask(0o002)
+    try:
+        handler = fetcher._PrivateRotatingFileHandler(
+            log_file,
+            maxBytes=1,
+            backupCount=fetcher.LOG_BACKUP_COUNT,
+            encoding="utf-8",
+        )
+        for _ in range(4):
+            handler.emit(logging.LogRecord("test", logging.INFO, __file__, 1, "x", (), None))
+        handler.close()
+    finally:
+        os.umask(previous_umask)
+
+    assert len(creation_modes) >= 2
+    assert all(mode == 0o600 for mode in creation_modes)
+    assert stat.S_IMODE(log_file.stat().st_mode) == 0o600
+    assert stat.S_IMODE((tmp_path / "widget.log.1").stat().st_mode) == 0o600
+    assert stat.S_IMODE((tmp_path / "widget.log.2").stat().st_mode) == 0o600

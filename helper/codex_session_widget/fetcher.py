@@ -21,9 +21,19 @@ LOG_MAX_BYTES = 64 * 1024
 LOG_BACKUP_COUNT = 2
 
 
+def _private_opener(path: str, flags: int) -> int:
+    return os.open(path, flags, 0o600)
+
+
 class _PrivateRotatingFileHandler(RotatingFileHandler):
     def _open(self):
-        stream = super()._open()
+        stream = self._builtin_open(
+            self.baseFilename,
+            self.mode,
+            encoding=self.encoding,
+            errors=self.errors,
+            opener=_private_opener,
+        )
         try:
             os.chmod(self.baseFilename, 0o600)
         except OSError:
