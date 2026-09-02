@@ -142,7 +142,7 @@ def test_read_rate_limits_sends_initialize_then_rate_limit_request(monkeypatch) 
             pass
 
     class FakeStdout:
-        def readline(self) -> str:
+        def readline(self, size: int = -1) -> str:
             return next(responses)
 
     class FakeProcess:
@@ -177,6 +177,90 @@ def test_read_rate_limits_sends_initialize_then_rate_limit_request(monkeypatch) 
     ]
 
 
+def test_read_rate_limits_accepts_response_below_message_limit(monkeypatch) -> None:
+    responses = iter(
+        [
+            b'{"id":1,"result":{}}\n',
+            b'{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":25,"resetsAt":1780754400}}}}\n',
+        ]
+    )
+
+    class FakeStdin:
+        def write(self, value: str) -> None:
+            pass
+
+        def flush(self) -> None:
+            pass
+
+        def close(self) -> None:
+            pass
+
+    class FakeStdout:
+        def fileno(self) -> int:
+            return 7
+
+    class FakeProcess:
+        stdin = FakeStdin()
+        stdout = FakeStdout()
+
+        def terminate(self) -> None:
+            pass
+
+        def wait(self, timeout: float | None = None) -> int:
+            return 0
+
+    monkeypatch.setattr(codex_api.select, "select", lambda *args: ([7], [], []))
+    monkeypatch.setattr(codex_api.os, "read", lambda fd, size: next(responses))
+    monkeypatch.setattr(codex_api.subprocess, "Popen", lambda *args, **kwargs: FakeProcess())
+
+    result = codex_api.read_rate_limits()
+
+    assert result["rateLimits"]["primary"]["usedPercent"] == 25
+
+
+def test_read_rate_limits_rejects_oversized_response_before_parsing_and_cleans_up(monkeypatch) -> None:
+    calls: list[str] = []
+    chunks = iter([b"x" * 4096 for _ in range(codex_api.APP_SERVER_MAX_MESSAGE_BYTES // 4096)])
+
+    class FakeStdin:
+        def write(self, value: str) -> None:
+            pass
+
+        def flush(self) -> None:
+            pass
+
+        def close(self) -> None:
+            calls.append("close")
+
+    class FakeStdout:
+        def fileno(self) -> int:
+            return 7
+
+    class FakeProcess:
+        stdin = FakeStdin()
+        stdout = FakeStdout()
+
+        def terminate(self) -> None:
+            calls.append("terminate")
+
+        def wait(self, timeout: float | None = None) -> int:
+            calls.append("wait")
+            return 0
+
+    def fail_loads(value: str) -> object:
+        raise AssertionError("oversized response must not be parsed")
+
+    monkeypatch.setattr(codex_api.json, "loads", fail_loads)
+    monkeypatch.setattr(codex_api.select, "select", lambda *args: ([7], [], []))
+    monkeypatch.setattr(codex_api.os, "read", lambda fd, size: next(chunks))
+    monkeypatch.setattr(codex_api.subprocess, "Popen", lambda *args, **kwargs: FakeProcess())
+
+    with pytest.raises(codex_api.CodexApiUnavailable, match="message exceeds size limit"):
+        codex_api.read_rate_limits()
+
+    assert calls == ["close", "terminate", "wait"]
+
+
 def test_read_rate_limits_uses_local_bin_codex_when_path_lookup_fails(monkeypatch) -> None:
     popen_args: list[list[str]] = []
     responses = iter(
@@ -197,7 +281,7 @@ def test_read_rate_limits_uses_local_bin_codex_when_path_lookup_fails(monkeypatc
             pass
 
     class FakeStdout:
-        def readline(self) -> str:
+        def readline(self, size: int = -1) -> str:
             return next(responses)
 
     class FakeProcess:
@@ -279,7 +363,7 @@ def test_read_rate_limits_kills_process_when_terminate_times_out(monkeypatch) ->
             calls.append("close")
 
     class FakeStdout:
-        def readline(self) -> str:
+        def readline(self, size: int = -1) -> str:
             return next(responses)
 
     class FakeProcess:
@@ -319,7 +403,7 @@ def test_read_rate_limits_rejects_invalid_json_without_leaking_payload(monkeypat
             pass
 
     class FakeStdout:
-        def readline(self) -> str:
+        def readline(self, size: int = -1) -> str:
             return payload + "\n"
 
     class FakeProcess:

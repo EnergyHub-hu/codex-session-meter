@@ -350,12 +350,14 @@ def test_cli_debug_registered():
 def test_cli_other_commands_unchanged():
     from codex_session_widget.cli import main
     # status without json should work (mocked)
-    with patch("codex_session_widget.fetcher.cached_status", return_value={"ok": True, "display": "89% | 05.29.", "status": "ok"}):
+    with patch("codex_session_widget.cli.cached_status", return_value={"ok": True, "display": "89% | 05.29.", "status": "ok"}) as mock_status:
         rc = main(["status"])
         assert rc == 0
-    with patch("codex_session_widget.fetcher.cached_status", return_value={"ok": True, "display": "89% | 05.29.", "status": "ok"}):
+        mock_status.assert_called_once_with()
+    with patch("codex_session_widget.cli.cached_status", return_value={"ok": True, "display": "89% | 05.29.", "status": "ok"}) as mock_status:
         rc = main(["status", "--json"])
         assert rc == 0
+        mock_status.assert_called_once_with()
 
 
 # ---------------------------------------------------------------------------

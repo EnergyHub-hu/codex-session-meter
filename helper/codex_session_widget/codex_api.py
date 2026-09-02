@@ -24,6 +24,7 @@ class CodexApiUnavailable(CodexApiError):
 
 APP_SERVER_TIMEOUT_SECONDS = 15.0
 APP_SERVER_SHUTDOWN_SECONDS = 2.0
+APP_SERVER_MAX_MESSAGE_BYTES = 64 * 1024
 CLIENT_VERSION = "0.3.0"
 
 
@@ -69,33 +70,46 @@ def _read_line(process: subprocess.Popen[str], deadline: float) -> str:
     try:
         fd = stdout.fileno()
     except (AttributeError, OSError, ValueError):
-        return stdout.readline()
+        line = stdout.readline(APP_SERVER_MAX_MESSAGE_BYTES)
+        line_size = len(line.encode("utf-8"))
+        if line_size > APP_SERVER_MAX_MESSAGE_BYTES or (
+            line_size == APP_SERVER_MAX_MESSAGE_BYTES and not line.endswith("\n")
+        ):
+            raise CodexApiUnavailable("Codex app-server message exceeds size limit.")
+        return line
 
-    buffer = getattr(process, "_codex_stdout_buffer", "")
-    if "\n" in buffer:
-        line, rest = buffer.split("\n", 1)
+    buffer = getattr(process, "_codex_stdout_buffer", b"")
+    if b"\n" in buffer:
+        line, rest = buffer.split(b"\n", 1)
+        if len(line) + 1 > APP_SERVER_MAX_MESSAGE_BYTES:
+            raise CodexApiUnavailable("Codex app-server message exceeds size limit.")
         setattr(process, "_codex_stdout_buffer", rest)
-        return line + "\n"
+        return (line + b"\n").decode("utf-8", errors="replace")
 
     while True:
+        if len(buffer) >= APP_SERVER_MAX_MESSAGE_BYTES:
+            raise CodexApiUnavailable("Codex app-server message exceeds size limit.")
+
         ready, _, _ = select.select([fd], [], [], _remaining_seconds(deadline))
         if not ready:
             if buffer:
                 raise CodexApiUnavailable("Codex app-server returned invalid JSON.")
             raise CodexApiUnavailable("Codex app-server request timed out.")
 
-        chunk = os.read(fd, 4096)
+        chunk = os.read(fd, min(4096, APP_SERVER_MAX_MESSAGE_BYTES - len(buffer)))
         if not chunk:
             if buffer:
-                setattr(process, "_codex_stdout_buffer", "")
-                return buffer
+                setattr(process, "_codex_stdout_buffer", b"")
+                return buffer.decode("utf-8", errors="replace")
             return ""
 
-        buffer += chunk.decode("utf-8", errors="replace")
-        if "\n" in buffer:
-            line, rest = buffer.split("\n", 1)
+        buffer += chunk
+        if b"\n" in buffer:
+            line, rest = buffer.split(b"\n", 1)
+            if len(line) + 1 > APP_SERVER_MAX_MESSAGE_BYTES:
+                raise CodexApiUnavailable("Codex app-server message exceeds size limit.")
             setattr(process, "_codex_stdout_buffer", rest)
-            return line + "\n"
+            return (line + b"\n").decode("utf-8", errors="replace")
 
 
 def _read_response(process: subprocess.Popen[str], message_id: int, deadline: float) -> dict[str, Any]:

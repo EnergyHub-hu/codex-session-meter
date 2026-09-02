@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
+import stat
 from datetime import datetime, timedelta, timezone
 
 from codex_session_widget import fetcher
+from codex_session_widget import config
 
 
 def test_refresh_status_uses_codex_cli_api(monkeypatch) -> None:
@@ -64,3 +67,23 @@ def test_refresh_status_has_no_configured_source_after_codex_cli_failure(monkeyp
     assert payload["ok"] is False
     assert payload["status"] == "parse_error"
     assert payload["message"] == "Codex CLI API did not return rate limit data."
+
+
+def test_setup_logging_uses_private_rotating_handler(tmp_path, monkeypatch) -> None:
+    log_file = tmp_path / "widget.log"
+    monkeypatch.setattr(config, "LOG_FILE", log_file)
+
+    fetcher.setup_logging()
+
+    handlers = [
+        handler
+        for handler in logging.getLogger().handlers
+        if getattr(handler, "_codex_session_meter_handler", False)
+    ]
+    assert len(handlers) == 1
+    assert handlers[0].maxBytes == fetcher.LOG_MAX_BYTES
+    assert handlers[0].backupCount == fetcher.LOG_BACKUP_COUNT
+    assert stat.S_IMODE(log_file.stat().st_mode) == 0o600
+
+    logging.getLogger().removeHandler(handlers[0])
+    handlers[0].close()

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import datetime
+from logging.handlers import RotatingFileHandler
 from typing import Any
 
 from . import auth, codex_api
@@ -15,6 +17,21 @@ from .config import (
 from .formatters import error_payload
 
 
+LOG_MAX_BYTES = 64 * 1024
+LOG_BACKUP_COUNT = 2
+
+
+class _PrivateRotatingFileHandler(RotatingFileHandler):
+    def _open(self):
+        stream = super()._open()
+        try:
+            os.chmod(self.baseFilename, 0o600)
+        except OSError:
+            stream.close()
+            raise
+        return stream
+
+
 def _now() -> datetime:
     return datetime.now().astimezone()
 
@@ -23,11 +40,30 @@ def setup_logging() -> None:
     from .config import LOG_FILE
 
     ensure_dirs()
-    logging.basicConfig(
-        filename=LOG_FILE,
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s",
+    LOG_FILE.touch(mode=0o600, exist_ok=True)
+    LOG_FILE.chmod(0o600)
+
+    root_logger = logging.getLogger()
+    log_path = os.path.abspath(LOG_FILE)
+    for existing in root_logger.handlers:
+        if not getattr(existing, "_codex_session_meter_handler", False):
+            continue
+        if getattr(existing, "baseFilename", None) == log_path:
+            return
+        root_logger.removeHandler(existing)
+        existing.close()
+
+    handler = _PrivateRotatingFileHandler(
+        LOG_FILE,
+        maxBytes=LOG_MAX_BYTES,
+        backupCount=LOG_BACKUP_COUNT,
+        encoding="utf-8",
     )
+    handler.setLevel(logging.INFO)
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    handler._codex_session_meter_handler = True
+    root_logger.addHandler(handler)
+    root_logger.setLevel(logging.INFO)
 
 
 def load_last_success() -> dict | None:
