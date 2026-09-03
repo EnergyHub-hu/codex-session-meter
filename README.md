@@ -41,6 +41,10 @@ Install locally without root:
 ./install.sh
 ```
 
+The installer creates a virtual environment, builds the helper from the local
+source tree, and installs it there. No pre-built wheel or separate build step is
+required.
+
 Enable the extension:
 
 ```bash
@@ -157,13 +161,16 @@ The only supported data source remains `codex app-server --stdio` with `account/
 
 The helper uses semantic versioning. The GNOME Shell `metadata.json` `version` field is a separate integer extension package version.
 
-Before publishing:
+Development verification uses the source tree:
 
 1. Run `python -m pytest` from `helper/`.
 2. Run `TZ=UTC python -m pytest` and `TZ=Europe/Budapest python -m pytest` from `helper/`.
 3. Run `node --test extension/weekly-pace.test.js` from the repository root.
-4. Scan for `access_token`, `refresh_token`, `Authorization`, `Bearer`, `cookie`, `session`, `api_key`, `secret`, and `password`.
-5. Review `git status --short` and `git diff`; confirm that no auth, cache, log, `.env`, key, certificate, or browser-data file is included.
+
+Before publishing:
+
+1. Scan for `access_token`, `refresh_token`, `Authorization`, `Bearer`, `cookie`, `session`, `api_key`, `secret`, and `password`.
+2. Review `git status --short` and `git diff`; confirm that no auth, cache, log, `.env`, key, certificate, or browser-data file is included.
 
 Changes are recorded in [CHANGELOG.md](CHANGELOG.md).
 

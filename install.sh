@@ -17,7 +17,6 @@ mkdir -p "$BIN_DIR" "$(dirname "$EXTENSION_TARGET")" "$CONFIG_DIR" "$CACHE_DIR" 
 chmod 700 "$BIN_DIR" "$CONFIG_DIR" "$CACHE_DIR" "$DATA_DIR"
 
 python3 -m venv "$VENV_DIR"
-"$VENV_DIR/bin/python" -m pip install --upgrade pip
 "$VENV_DIR/bin/python" -m pip install "$ROOT_DIR/helper"
 
 ln -sf "$VENV_DIR/bin/codex-session-meter" "$BIN_DIR/codex-session-meter"
