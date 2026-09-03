@@ -26,30 +26,30 @@ def codex_auth_file_exists() -> bool:
     return CODEX_AUTH_FILE.exists()
 
 
-def _access_token_from_data(data: object) -> str | None:
+def _has_access_token_in_data(data: object) -> bool:
     if not isinstance(data, dict):
-        return None
+        return False
 
     tokens = data.get("tokens")
     if isinstance(tokens, dict):
         token = tokens.get("access_token")
-        if isinstance(token, str) and token.strip():
-            return token.strip()
+        if isinstance(token, str) and any(not character.isspace() for character in token):
+            return True
 
     token = data.get("access_token")
-    if isinstance(token, str) and token.strip():
-        return token.strip()
+    if isinstance(token, str) and any(not character.isspace() for character in token):
+        return True
 
-    return None
+    return False
 
 
-def codex_access_token() -> str | None:
+def codex_has_access_token() -> bool:
     try:
         data = json.loads(CODEX_AUTH_FILE.read_text(encoding="utf-8"))
     except (FileNotFoundError, OSError, json.JSONDecodeError):
-        return None
+        return False
 
-    return _access_token_from_data(data)
+    return _has_access_token_in_data(data)
 
 
 def _auth_file_label() -> tuple[str, str]:
@@ -75,7 +75,7 @@ def codex_auth_summary() -> dict:
         "auth_file": auth_file,
         "auth_file_location": auth_file_location,
         "auth_file_exists": codex_auth_file_exists(),
-        "has_access_token": codex_access_token() is not None,
+        "has_access_token": codex_has_access_token(),
     }
 
 

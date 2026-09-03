@@ -24,7 +24,9 @@ Logout flow:
 codex-session-meter logout
 ```
 
-`login` delegates to `codex login`. Codex CLI stores auth in `$CODEX_HOME/auth.json`, defaulting to `~/.codex/auth.json`. The helper checks only file presence and whether an access token field exists; it does not print token values.
+`login` delegates to `codex login`. Codex CLI stores auth in `$CODEX_HOME/auth.json`, defaulting to `~/.codex/auth.json`. The helper checks only file presence and whether an access token field exists; its application-facing auth-status API returns a boolean and never returns or prints token values.
+
+Implementation limitation: the helper currently uses `json.loads()` to inspect `auth.json`, so the parser may temporarily materialize token values in process memory. This change reduces credential propagation and output exposure; it does not guarantee that token values never enter Python memory.
 
 The helper does not use browser profiles, cookies, HAR files, Playwright state, or Chromium data as auth inputs.
 
