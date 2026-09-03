@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 import stat
 from datetime import datetime, timedelta, timezone
+
+import pytest
 
 from codex_session_widget import fetcher
 from codex_session_widget import config
@@ -146,3 +149,62 @@ def test_private_handler_creates_rollover_log_with_mode_0600_and_retains_backups
     assert stat.S_IMODE(log_file.stat().st_mode) == 0o600
     assert stat.S_IMODE((tmp_path / "widget.log.1").stat().st_mode) == 0o600
     assert stat.S_IMODE((tmp_path / "widget.log.2").stat().st_mode) == 0o600
+
+
+def test_save_success_atomically_creates_private_complete_state_under_permissive_umask(tmp_path, monkeypatch) -> None:
+    state_file = tmp_path / "state.json"
+    replacement_observations = []
+    real_replace = fetcher.os.replace
+
+    def recording_replace(source, destination):
+        temporary_file = tmp_path / source.name
+        replacement_observations.append(
+            (
+                temporary_file.parent,
+                stat.S_IMODE(temporary_file.stat().st_mode),
+                json.loads(temporary_file.read_text(encoding="utf-8")),
+            )
+        )
+        real_replace(source, destination)
+
+    monkeypatch.setattr(fetcher, "STATE_FILE", state_file)
+    monkeypatch.setattr(fetcher, "ensure_dirs", lambda: None)
+    monkeypatch.setattr(fetcher.os, "replace", recording_replace)
+    payload = {"ok": True, "weekly_used_percent": 42}
+    replacement_payload = {"ok": True, "weekly_used_percent": 84}
+
+    previous_umask = os.umask(0)
+    try:
+        fetcher.save_success(payload)
+        fetcher.save_success(replacement_payload)
+    finally:
+        os.umask(previous_umask)
+
+    assert replacement_observations == [
+        (tmp_path, 0o600, payload),
+        (tmp_path, 0o600, replacement_payload),
+    ]
+    assert json.loads(state_file.read_text(encoding="utf-8")) == replacement_payload
+    assert stat.S_IMODE(state_file.stat().st_mode) == 0o600
+    assert list(tmp_path.iterdir()) == [state_file]
+
+
+def test_save_success_failure_before_replace_preserves_destination_and_cleans_temp(tmp_path, monkeypatch) -> None:
+    state_file = tmp_path / "state.json"
+    old_payload = {"ok": True, "weekly_used_percent": 17}
+    state_file.write_text(json.dumps(old_payload), encoding="utf-8")
+
+    def failing_replace(source, destination):
+        assert source.parent == tmp_path
+        assert stat.S_IMODE(source.stat().st_mode) == 0o600
+        raise OSError("simulated replacement failure")
+
+    monkeypatch.setattr(fetcher, "STATE_FILE", state_file)
+    monkeypatch.setattr(fetcher, "ensure_dirs", lambda: None)
+    monkeypatch.setattr(fetcher.os, "replace", failing_replace)
+
+    with pytest.raises(OSError, match="simulated replacement failure"):
+        fetcher.save_success({"ok": True, "weekly_used_percent": 99})
+
+    assert json.loads(state_file.read_text(encoding="utf-8")) == old_payload
+    assert list(tmp_path.iterdir()) == [state_file]

@@ -11,6 +11,7 @@ from . import auth, codex_api
 from .config import (
     STATE_FILE,
     ConfigError,
+    _atomic_write_private_text,
     ensure_dirs,
     read_settings,
 )
@@ -89,8 +90,7 @@ def load_last_success() -> dict | None:
 
 def save_success(payload: dict) -> None:
     ensure_dirs()
-    STATE_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    STATE_FILE.chmod(0o600)
+    _atomic_write_private_text(STATE_FILE, json.dumps(payload, ensure_ascii=False, indent=2))
 
 
 def _settings_kwargs(settings: dict[str, object]) -> dict[str, object]:

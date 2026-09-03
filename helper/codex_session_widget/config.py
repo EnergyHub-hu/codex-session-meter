@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from pathlib import Path
 
 try:
@@ -57,6 +58,22 @@ def _load_toml_config(path: Path) -> dict:
         raise ConfigError("Configuration file must be valid TOML.") from exc
 
     return loaded if isinstance(loaded, dict) else {}
+
+
+def _atomic_write_private_text(path: Path, content: str) -> None:
+    file_descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        dir=path.parent,
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        with os.fdopen(file_descriptor, "w", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+        os.replace(temporary_path, path)
+    except BaseException:
+        temporary_path.unlink(missing_ok=True)
+        raise
 
 
 def _default_settings() -> dict[str, object]:
@@ -174,7 +191,8 @@ def write_settings(
         settings["display_mode"] = normalized
 
     ensure_dirs()
-    SETTINGS_FILE.write_text(
+    _atomic_write_private_text(
+        SETTINGS_FILE,
         "\n".join(
             (
                 f'poll_interval_minutes = {settings["poll_interval_minutes"]}',
@@ -187,7 +205,5 @@ def write_settings(
                 "",
             )
         ),
-        encoding="utf-8",
     )
-    SETTINGS_FILE.chmod(0o600)
     return settings
