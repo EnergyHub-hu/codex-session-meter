@@ -218,7 +218,7 @@ def refresh_status() -> dict[str, Any]:
         return error_payload(
             "parse_error",
             "Codex: nem olvasható",
-            "Could not parse the analytics response.",
+            "Could not parse the Codex CLI API response.",
             last_success=last_success,
             poll_interval_minutes=settings["poll_interval_minutes"],
             show_session=settings["show_session"],
@@ -233,7 +233,7 @@ def refresh_status() -> dict[str, Any]:
         return error_payload(
             "network_error",
             "Codex: hálózati hiba",
-            "Could not refresh Codex analytics data.",
+            "Could not refresh Codex CLI API data.",
             last_success=last_success,
             poll_interval_minutes=settings["poll_interval_minutes"],
             show_session=settings["show_session"],

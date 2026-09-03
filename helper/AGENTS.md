@@ -53,8 +53,7 @@ It is responsible for:
 
 ## Payload and parsing rules
 
-- Keep analytics payload parsing bounded by `MAX_ANALYTICS_PAYLOAD_CHARS`.
-- Prefer structured JSON parsing before HTML fallback in parser utilities.
+- Parse only the structured values returned by `account/rateLimits/read`.
 - Do not include raw invalid payload content in exceptions or logs.
 - Treat `rateLimits.primary.usedPercent` and `rateLimits.primary.resetsAt` as required for weekly payload creation.
 - Clamp displayed percentages safely where existing formatter behavior requires it.
