@@ -7,6 +7,31 @@ A formátum a [Keep a Changelog](https://keepachangelog.com/hu/1.1.0/) alapján 
 
 ## [Unreleased]
 
+## [v0.3.7] - 2026-09-03
+
+### Új funkciók
+
+- A telepítő közvetlenül a helyi forrásból építi és telepíti a helper csomagot; külön előre buildelt csomag nem szükséges.
+
+### Javítások
+
+- A helper minden kvótaadatot a Codex CLI app-server `account/rateLimits/read` válaszából olvas.
+- A korábbi legacy analytics parser és a hozzá tartozó mintaadatok eltávolításra kerültek.
+- A Codex app-server válaszainak olvasása legfeljebb 64 KiB méretű üzeneteket fogad el, így a túl nagy válaszok biztonságosan elutasításra kerülnek.
+- A buildhez használt `setuptools` és `setuptools-scm` verziók rögzítve lettek.
+
+### Biztonság
+
+- Az auth-status API csak azt jelzi, hogy található-e használható access token; tokenértéket nem ad vissza.
+- A naplózás tulajdonos által olvasható, korlátozott méretű és rotált fájlokat használ.
+- A beállítások és a legutóbbi sikeres állapot atomikusan, tulajdonos által olvasható jogosultságokkal kerülnek mentésre.
+
+### Tesztek
+
+- Bővült a lefedettség a Codex CLI API válaszméret-korlátjára, a biztonságos naplófájlokra és azok rotációjára.
+- Új tesztek ellenőrzik az atomikus beállítás- és állapotmentést, a csomagtelepítést és a forrásból történő telepítést.
+- Az auth-status tesztek ellenőrzik, hogy tokenérték nem kerül a kimenetre.
+
 ## [v0.3.6] - 2026-09-01
 
 ### Javítások
